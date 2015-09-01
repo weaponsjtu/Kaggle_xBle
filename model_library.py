@@ -5,7 +5,8 @@ import os
 
 from sklearn import preprocessing
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor
-from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.svm import SVR, SVC
 from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 from sklearn import neighbors
 
@@ -410,12 +411,21 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             pred_val = model.predict( x_test, batch_size=16 )
             pred_val = pred_val.reshape( pred_val.shape[0] )
 
-        # Nearest Neighbors
+        # Nearest Neighbors, regression
         if model_type.count('knn') > 0:
             print "%s training..." % model_type
             n_neighbors = model_param['n_neighbors']
             weights = model_param['weights']
             model = neighbors.KNeighborsRegressor(n_neighbors=n_neighbors, weights=weights)
+            model.fit( x_train, y_train )
+            pred_val = model.predict( x_test )
+
+        # Nearest Neighbors, classifier
+        if model_type.count('knnC') > 0:
+            print "%s training..." % model_type
+            n_neighbors = model_param['n_neighbors']
+            weights = model_param['weights']
+            model = neighbors.KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
@@ -456,6 +466,13 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
+        # SVM classification
+        if model_type.count('svc') > 0:
+            print "%s training..." % model_type
+            model = SVC(C=model_param['C'], epsilon=model_param['epsilon'])
+            model.fit( x_train, y_train )
+            pred_val = model.predict( x_test )
+
         # rank SVM
         if model_type.count('ranksvm') > 0:
             print "%s training..." % model_type
@@ -469,10 +486,24 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
+        # random forest classification
+        if model_type.count('rfC') > 0:
+            print "%s training..." % model_type
+            model = RandomForestClassifier(n_estimators=model_param['n_estimators'])
+            model.fit( x_train, y_train )
+            pred_val = model.predict( x_test )
+
         # extra tree regression
         if model_type.count('extratree') > 0:
             print "%s training..." % model_type
             model = ExtraTreesRegressor(n_estimators=model_param['n_estimators'])
+            model.fit( x_train, y_train )
+            pred_val = model.predict( x_test )
+
+        # extra tree classification
+        if model_type.count('extratreeC') > 0:
+            print "%s training..." % model_type
+            model = ExtraTreesClassifier(n_estimators=model_param['n_estimators'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
@@ -483,7 +514,28 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
+        # GBRT classification
+        if model_type.count('gbfC') > 0:
+            print "%s training..." % model_type
+            model = GradientBoostingClassifier(n_estimators=model_param['n_estimators'])
+            model.fit( x_train, y_train )
+            pred_val = model.predict( x_test )
+
         # xgboost
+        if model_type.count('xgb_binary') > 0:
+            print "%s training..." % model_type
+            params = model_param
+            num_rounds = model_param['num_rounds']
+            #create a train and validation dmatrices
+            xgtrain = xgb.DMatrix(x_train, label=y_train)
+            xgval = xgb.DMatrix(x_test)
+
+            #train using early stopping and predict
+            watchlist = [(xgtrain, "train")]
+            #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
+            model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
+            pred_val = model.predict( xgval, ntree_limit=model.best_iteration )
+
         if model_type.count('xgb_rank') > 0:
             print "%s training..." % model_type
             params = model_param
