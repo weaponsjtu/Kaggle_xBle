@@ -19,3 +19,4 @@ Model Stacking, Raw feature + meta feature, XGBoost + AdaBoost
 ### param.py
 All parameters
 
+PS: need to modify gen_featu.py when apply a new task
