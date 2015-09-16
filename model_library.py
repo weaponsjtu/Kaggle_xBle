@@ -11,13 +11,11 @@ from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 from sklearn import neighbors
 
 import xgboost as xgb
-from rankSVM import RankSVM
 
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, STATUS_FAIL
 from hyperopt.mongoexp import MongoTrials
 
 from utils import *
-from ml_metrics import *
 
 from param import config
 
@@ -128,18 +126,6 @@ def train_model(path, x_train, y_train, x_test, y_test, feat, param_best_dic):
                 pickle.dump(pred_val, f, -1)
             print "Done!"
 
-    # rank SVM
-    if model_list.count('ranksvm') > 0:
-        model_type = 'ranksvm'
-        pred_file = "%s/%s_%s.pred.pkl" %(path, feat, model_type)
-        if config.update_model.count(model_type) > 0 or os.path.exists(pred_file) is False:
-            print "%s training..." % model_type
-            model_param = param_best_dic["%s_%s" %(feat, model_type)]
-            model = RankSVM().fit( x_train, y_train )
-            pred_val = model.predict( x_test )
-            with open(pred_file, 'wb') as f:
-                pickle.dump(pred_val, f, -1)
-            print "Done!"
 
     # random forest regression
     if model_list.count('rf') > 0:
@@ -358,7 +344,7 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
 
                 if model_type == 'logistic':
                     y_test = y_test / np.linalg.norm(y_test)
-                gini_cv[iter, fold] = Gini(y_test, pred_val)
+                gini_cv[iter, fold] = ml_score(y_test, pred_val)
     else: # multiprocess
         manager = multiprocessing.Manager()
         gini_cv = manager.list()
@@ -473,12 +459,6 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
-        # rank SVM
-        if model_type.count('ranksvm') > 0:
-            print "%s training..." % model_type
-            model = RankSVM().fit( x_train, y_train )
-            pred_val = model.predict( x_test )
-
         # random forest regression
         if model_type.count('rf') > 0:
             print "%s training..." % model_type
@@ -517,12 +497,12 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
         # GBRT classification
         if model_type.count('gbfC') > 0:
             print "%s training..." % model_type
-            model = GradientBoostingClassifier(n_estimators=model_param['n_estimators'])
+            model = GradientBoostingClassifier(n_estimators=model_param['n_estimators'], subsample=model_param['subsample'], max_depth=model_param['max_depth'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
         # xgboost
-        if model_type.count('xgb_binary') > 0:
+        if model_type.count('xgb_binary') > 0 or model_type.count('xgb_log') > 0 or model_type.count('xgb_auc') > 0:
             print "%s training..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']
@@ -532,9 +512,8 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
 
             #train using early stopping and predict
             watchlist = [(xgtrain, "train")]
-            #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
-            pred_val = model.predict( xgval, ntree_limit=model.best_iteration )
+            pred_val = model.predict( xgval )
 
         if model_type.count('xgb_rank') > 0:
             print "%s training..." % model_type
@@ -569,34 +548,29 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             print "%s training..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']
-            #create a train and validation dmatrices
             xgtrain = xgb.DMatrix(x_train, label=(y_train - 1))
             xgval = xgb.DMatrix(x_test)
 
-            #train using early stopping and predict
             watchlist = [(xgtrain, "train")]
-            #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
             pred_val = model.predict( xgval )
 
-        if model_type.count('xgb_tree') > 0:
+        if model_type.count('xgb_tree_auc') or model_type.count('xgb_tree_log') > 0 or model_type.count('xgb_fix') > 0:
             print "%s training..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']
-            #create a train and validation dmatrices
             xgtrain = xgb.DMatrix(x_train, label=y_train)
             xgval = xgb.DMatrix(x_test)
 
-            #train using early stopping and predict
             watchlist = [(xgtrain, "train")]
-            #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
-            model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
+            model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=model_param['early_stopping_rounds'])
             pred_val = model.predict( xgval, ntree_limit=model.best_iteration )
 
-        if model_type.count('xgb_art') > 0 or model_type.count('xgb_fix') > 0:
+        if model_type.count('xgb_art') > 0:
             print "%s trainning..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']
+            #offset = int(model_param['valid_size'] * y_train.shape[0]) + 1
             offset = int(model_param['valid_size'] * y_train.shape[0]) + 1
             if type(x_train) != np.ndarray:
                 x_train = x_train.toarray()
@@ -655,7 +629,7 @@ class ModelProcess(multiprocessing.Process):
         if self.model_type == 'logistic':
             y_test = y_test / np.linalg.norm(y_test)
 
-        self.gini_cv.append( Gini(y_test, pred_val) )
+        self.gini_cv.append( ml_score(y_test, pred_val) )
 
 
 def hyperopt_main():

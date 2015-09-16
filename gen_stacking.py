@@ -8,10 +8,11 @@
 ###
 
 from sklearn.metrics import mean_squared_error as MSE
-from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
+from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge, Lasso
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor, AdaBoostRegressor
 from sklearn import cross_validation
 from sklearn import manifold
+from sklearn.calibration import CalibratedClassifierCV
 
 import xgboost as xgb
 
@@ -42,8 +43,8 @@ class StackProcess(multiprocessing.Process):
 
     def run(self):
         y_pred = xgb_train(self.x_train, self.y_train, self.x_test)
-        self.gini_cv.append(Gini(self.y_test, y_pred))
-        print "Process %d done! Gini is %f" %(os.getpid(),  Gini(self.y_test, y_pred))
+        self.gini_cv.append(ml_score(self.y_test, y_pred))
+        print "Process %d done! ml_score is %f" %(os.getpid(),  ml_score(self.y_test, y_pred))
 
 
 def gen_base_model():
@@ -57,11 +58,12 @@ def gen_base_model():
         for model in model_list:
             if check_model("%s_%s"%(feat, model)):
                 model_library.append("%s_%s" %(feat, model))
-            for num in range(config.hyper_max_evals - 10, config.hyper_max_evals+1):
+            #for num in range(config.hyper_max_evals - 10, config.hyper_max_evals+1):
+            for num in range(config.hyper_max_evals):
                 model_name = "%s_%s@%d" %(feat, model, num)
                 if check_model(model_name):
                     model_library.append(model_name)
-                    break
+                    #break
 
     #model_library = add_prior_models(model_library)
     return model_library
@@ -69,11 +71,15 @@ def gen_base_model():
 # stacking
 def model_stacking():
     # load data
-    train = pd.read_csv(config.origin_train_path, index_col=0)
-    test = pd.read_csv(config.origin_test_path, index_col=0)
+    #train = pd.read_csv(config.origin_train_path, index_col=0)
+    #test = pd.read_csv(config.origin_test_path, index_col=0)
+    with open('%s/all/train.label.feat.pkl' %config.data_folder, 'rb') as f:
+        [x_feat, x_label] = pickle.load(f)
 
-    x_label = np.array(train['Hazard'].values)
-    y_len = len(list(test.index))
+    #x_label = np.array(train[config.target].values)
+    with open('%s/all/test.label.feat.pkl' %config.data_folder, 'rb') as f:
+        [t_feat, t_label] = pickle.load(f)
+    y_len = len(t_label)
 
 
     model_library = gen_base_model()
@@ -89,14 +95,14 @@ def model_stacking():
 
     for iter in range(config.kiter):
         for i in range(len(model_library)):
-            for j, (validInd, trainInd) in enumerate(skf[iter]):
+            for j, (trainInd, validInd) in enumerate(skf[iter]):
                 path = "%s/iter%d/fold%d/%s.pred.pkl" %(config.data_folder, iter, j, model_library[i])
                 with open(path, 'rb') as f:
                     y_pred = pickle.load(f)
                 f.close()
-                #print "Gini score is %f" % Gini(x_label[validInd], y_pred)
-                blend_train[validInd, i, iter] += y_pred
-            blend_train[:, i, iter] /= config.kfold
+                #print "ml_score score is %f" % ml_score(x_label[validInd], y_pred)
+                blend_train[validInd, i, iter] = y_pred
+            #blend_train[:, i, iter] /= config.kfold
 
 
     for i in range(len(model_library)):
@@ -109,43 +115,48 @@ def model_stacking():
     return blend_train, blend_test, x_label, model_library
 
 def xgb_train(x_train, x_label, x_test):
-    model = 'xgb'
-    #model = 'adaboost'
-    #if model.count('xgb') >0:
-    params = {}
-    params["objective"] = "reg:linear"
-    params["eta"] = 0.005  # [0,1]
-    params["min_child_weight"] = 6
-    params["subsample"] = 0.7
-    params["colsample_bytree"] = 0.7
-    params["scale_pos_weight"] = 1.0
-    params["silent"] = 1
-    params["max_depth"] = 9
-    if config.nthread > 1:
-        params["nthread"] = 1
+    #model = 'xgb'
+    ##model = 'adaboost'
+    ##if model.count('xgb') >0:
+    #params = {}
+    #params["objective"] = "binary:logistic"
+    #params["eta"] = 0.01  # [0,1]
+    #params["min_child_weight"] = 6
+    #params["subsample"] = 0.7
+    #params["colsample_bytree"] = 0.8
+    #params["scale_pos_weight"] = 1.0
+    #params["eval_metric"] = 'auc'
+    #params["silent"] = 1
+    #params["max_depth"] = 8
+    #if config.nthread > 1:
+    #    params["nthread"] = 1
 
-    num_rounds = 10000
+    #num_rounds = 1000
 
-    xgtrain = xgb.DMatrix(x_train, label=x_label)
-    xgval = xgb.DMatrix(x_test)
+    #xgtrain = xgb.DMatrix(x_train, label=x_label)
+    #xgval = xgb.DMatrix(x_test)
 
-    #train using early stopping and predict
-    watchlist = [(xgtrain, "train")]
-    #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120, feval=gini_metric)
-    model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
-    pred1 = model.predict( xgval )
+    #watchlist = [(xgtrain, "train")]
+    #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
+    #pred1 = model.predict( xgval )
 
     #clf = RandomForestRegressor()
     #clf = LogisticRegression()
-    #clf = GradientBoostingRegressor()
-    clf = AdaBoostRegressor( ExtraTreesRegressor(max_depth=9), n_estimators=200 )
-    clf.fit(x_train, x_label)
-    pred2 = clf.predict(x_test)
+    clf = GradientBoostingRegressor()
+    cal_clf = CalibratedClassifierCV(clf, method='isotonic', cv=5)
+
+    #clf = Lasso()
+    #clf = AdaBoostRegressor( ExtraTreesRegressor(max_depth=8), n_estimators=20 )
+    #clf.fit(x_train, x_label)
+    #pred = clf.predict(x_test)
+    cal_clf.fit(x_train, x_label)
+    pred = cal_clf.predict_proba(x_test)
+    pred = pred[:, 1]
 
     #pred = pred1 * pred2 / (pred1 + pred2)
     #pred = 0.7 * (pred1**0.01) + 0.3 * (pred2**0.01)
     #pred = (pred1.argsort() + pred2.argsort()) / 2
-    pred = 0.6 * pred1 + 0.4 * pred2
+    #pred =  (pred1 +  pred2)/2
 
     return pred
 
@@ -184,7 +195,7 @@ def stacking_base(blend_train, blend_test, x_label, model_library):
                 #clf.fit(x_train, y_train)
                 #y_pred = clf.predict(x_test)
                 y_pred = xgb_train(x_train, y_train, x_test)
-                gini_cv.append(Gini(y_test, y_pred))
+                gini_cv.append(ml_score(y_test, y_pred))
         print "Average gini is %f" %(np.mean(gini_cv))
 
 
@@ -261,8 +272,8 @@ if __name__ == '__main__':
     #model_stacking()
     blend_train, blend_test, x_label, model_library = model_stacking()
     print "Feature done!!!"
-    #stacking_base(blend_train, blend_test, x_label, model_library)
-    stacking_nonlinear(blend_train, blend_test, x_label, model_library)
+    stacking_base(blend_train, blend_test, x_label, model_library)
+    #stacking_nonlinear(blend_train, blend_test, x_label, model_library)
 
     end_time = time.time()
     print "cost time %f" %( (end_time - start_time)/1000 )
