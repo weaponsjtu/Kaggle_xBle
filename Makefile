@@ -1,11 +1,11 @@
 all:
-	echo "fold, featu, [model, opt], [ensemble, stack, subm], show"
+	echo "fold, featu, [model, opt], [ensemble,rank, stack, subm], show"
 
 fold:
 	python gen_fold.py
 
 featu:
-	python gen_feat.py
+	python gen_feat.py | tee -a log/feat.log
 
 model:
 	python model_library.py "train" | tee -a log/model.log
@@ -22,5 +22,8 @@ ensemble:
 subm:
 	python gen_ensemble.py "submission" | tee -a log/subm.log
 
+rank:
+	python gen_ensemble.py "rankavg" | tee -a log/rank.log
+
 show:
-	python utils.py
+	python utils.py | tee -a log/utils.log

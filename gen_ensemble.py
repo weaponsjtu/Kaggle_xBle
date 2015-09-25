@@ -24,15 +24,7 @@ from param import config
 from utils import *
 
 
-def gen_subm(y_pred, filename=None):
-    test = pd.read_csv(config.origin_test_path, index_col=0)
-    idx = test.index
-    preds = pd.DataFrame({"Id": idx, "Hazard": y_pred})
-    preds = preds.set_index("Id")
-    if filename != None:
-        preds.to_csv(filename)
-    else:
-        preds.to_csv("sub/model_library.csv")
+
 
 def add_prior_models(model_library):
     #prior_models = {
@@ -110,7 +102,9 @@ def ensemble_algorithm(p1, p2, weight):
     #return (p1 + weight*p2) / (1+weight)
 
     ### weighted linear combine ###
-    return weight*p1 + (1-weight)*p2
+    #return 2.0 / (weight*(1.0/p1) + (1-weight)*(1.0/p2))
+    #return (weight * np.log(p1) + (1-weight) * np.log(p2))
+    return weight * p1 + (1-weight) * p2
 
 
 
@@ -124,42 +118,13 @@ def ensemble_selection_obj(param, model1_pred, model2_pred, labels, num_valid_ma
             y_pred = ensemble_algorithm(p1, p2, weight)
 
             y_true = labels[iter, fold, :num_valid_matrix[iter, fold]]
-            score = Gini(y_true, y_pred)
+            score = ml_score(y_true, y_pred)
             gini_cv[iter][fold] = score
     gini_mean = np.mean(gini_cv)
     return -gini_mean
 
-# check if we have generate every prediction for this model
-def check_model(model_name):
-    for iter in range(config.kiter):
-        for fold in range(config.kfold):
-            if os.path.exists('%s/iter%d/fold%d/%s.pred.pkl' %(config.data_folder, iter, fold, model_name)) is False:
-                return False
-
-    if os.path.exists('%s/all/%s.pred.pkl' %(config.data_folder, model_name)) is False:
-        return False
-
-    return True
 
 
-def gen_model_library():
-    # load feat, labels and pred
-    feat_names = config.feat_names
-    model_list = config.model_list
-
-    # combine them, and generate whold model_list
-    model_library = []
-    for feat in feat_names:
-        for model in model_list:
-            if check_model("%s_%s"%(feat, model)):
-                model_library.append("%s_%s" %(feat, model))
-            for num in range(1, config.hyper_max_evals+1):
-                model_name = "%s_%s@%d" %(feat, model, num)
-                if check_model(model_name):
-                    model_library.append(model_name)
-
-    #model_library = add_prior_models(model_library)
-    return model_library
 
 def ensemble_selection():
     # load feat, labels and pred
@@ -169,6 +134,7 @@ def ensemble_selection():
     # load model library
     model_library = gen_model_library()
     model_num = len(model_library)
+    print model_library
 
     # num valid matrix
     num_valid_matrix = np.zeros((config.kiter, config.kfold), dtype=int)
@@ -199,20 +165,13 @@ def ensemble_selection():
                 with open(pred_file, 'rb') as f:
                     y_pred = pickle.load(f)
                 model_valid_pred[mid, iter, fold, :num_valid_matrix[iter, fold]] = y_pred
-                score = Gini(valid_labels[iter, fold, :num_valid_matrix[iter, fold]], y_pred)
+                score = ml_score(valid_labels[iter, fold, :num_valid_matrix[iter, fold]], y_pred)
                 gini_cv_tmp[iter][fold] = score
         gini_cv.append(np.mean(gini_cv_tmp))
 
     # sort the model by their cv mean score
     gini_cv = np.array(gini_cv)
     sorted_model = gini_cv.argsort()[::-1] # large to small
-    id_accurate = 0
-    for i in range(len(sorted_model)):
-        mid = sorted_model[i]
-        if gini_cv[mid] < 0.2:
-            id_accurate = i
-            break
-    sorted_model = sorted_model[:id_accurate]
     for mid in sorted_model:
         print model_library[mid]
     print len(sorted_model)
@@ -224,7 +183,7 @@ def ensemble_selection():
     for iter in range(config.kiter):
         for fold in range(config.kfold):
             model_pred_tmp[iter, fold, :num_valid_matrix[iter][fold]] = model_valid_pred[sorted_model[0], iter, fold, :num_valid_matrix[iter][fold]]
-    print "Init with best model, Gini %f, Model %s" %(np.max(gini_cv), model_library[sorted_model[0]])
+    print "Init with best model, ml_score %f, Model %s" %(np.max(gini_cv), model_library[sorted_model[0]])
 
     # 2. greedy search
     best_model_list = []
@@ -297,18 +256,18 @@ def ensemble_selection():
                         p2 = model_valid_pred[model, iter, fold, :num_valid_matrix[iter, fold]]
                         y_true = valid_labels[iter, fold, :num_valid_matrix[iter, fold]]
                         y_pred = ensemble_algorithm(p1, p2, best_w)
-                        score = Gini(y_true, y_pred)
+                        score = ml_score(y_true, y_pred)
                         gini_cv_tmp[iter, fold] = score
 
 
-                print "Iter %d, Gini %f, Model %s, Weight %f" %(ensemble_iter, np.mean(gini_cv_tmp), model_library[model], best_w)
+                print "Iter %d, ml_score %f, Model %s, Weight %f" %(ensemble_iter, np.mean(gini_cv_tmp), model_library[model], best_w)
                 if (np.mean(gini_cv_tmp) - best_gini) >= 0.000001:
                     best_gini, best_model, best_weight = np.mean(gini_cv_tmp), model, best_w
                 #### single process
 
-        if best_model == None or best_weight > 0.9:
+        if best_model == None: #or best_weight > 0.9:
             break
-        print "Best for Iter %d, Gini %f, Model %s, Weight %f" %(ensemble_iter, best_gini, model_library[best_model], best_weight)
+        print "Best for Iter %d, ml_score %f, Model %s, Weight %f" %(ensemble_iter, best_gini, model_library[best_model], best_weight)
         best_weight_list.append(best_weight)
         best_model_list.append(best_model)
 
@@ -393,11 +352,11 @@ class EnsembleProcess(multiprocessing.Process):
                 p2 = self.model_valid_pred[self.model, iter, fold, :self.num_valid_matrix[iter, fold]]
                 y_true = self.valid_labels[iter, fold, :self.num_valid_matrix[iter, fold]]
                 y_pred = ensemble_algorithm(p1, p2, best_w)
-                score = Gini(y_true, y_pred)
+                score = ml_score(y_true, y_pred)
                 gini_cv_tmp[iter, fold] = score
 
 
-        print "Iter %d, Gini %f, Model %s, Weight %f" %(self.ensemble_iter, np.mean(gini_cv_tmp), self.model_library[self.model], best_w)
+        print "Iter %d, ml_score %f, Model %s, Weight %f" %(self.ensemble_iter, np.mean(gini_cv_tmp), self.model_library[self.model], best_w)
         if (np.mean(gini_cv_tmp) - self.best_gini[0]) >= 0.000001:
             self.best_gini[0], self.best_model[0], self.best_weight[0] = np.mean(gini_cv_tmp), self.model, best_w
 
@@ -410,6 +369,7 @@ def ensemble_rank_average():
     # load model library
     model_library = gen_model_library()
     model_num = len(model_library)
+    print model_library
     print model_num
 
     # num valid matrix
@@ -442,7 +402,7 @@ def ensemble_rank_average():
                 with open(pred_file, 'rb') as f:
                     y_pred = pickle.load(f)
                 model_valid_pred[mid, iter, fold, :num_valid_matrix[iter, fold]] = y_pred
-                score = Gini(valid_labels[iter, fold, :num_valid_matrix[iter, fold]], y_pred)
+                score = ml_score(valid_labels[iter, fold, :num_valid_matrix[iter, fold]], y_pred)
                 gini_cv_tmp[iter][fold] = score
         gini_cv.append(np.mean(gini_cv_tmp))
     print "gini cv done!!!"
@@ -460,31 +420,38 @@ def ensemble_rank_average():
         for iter in range(config.kiter):
             for fold in range(config.kfold):
                 pred_tmp = np.zeros((num_valid_matrix[iter, fold]), dtype=float)
+                #pred_tmp = np.ones((num_valid_matrix[iter, fold]), dtype=float)
                 for mid in range(model_end_id+1):
                     y_pred = model_valid_pred[sorted_model[mid], iter, fold, :num_valid_matrix[iter, fold]]
-                    #pred_tmp += y_pred.argsort() + 1
-                gini_cv_tmp[iter, fold] = Gini( valid_labels[iter, fold, :num_valid_matrix[iter, fold]], y_pred)
+                    #pred_tmp += (y_pred.argsort() + 1)*1.0 / len(y_pred)
+                    pred_tmp +=  1.0 / y_pred # log mean, harmonic mean
+                    #pred_tmp *= y_pred
+                pred_tmp = (model_end_id + 1)*1.0 / pred_tmp
+                #pred_tmp /= (model_end_id + 1)
+                #pred_tmp = np.power(pred_tmp, 1.0/(model_end_id + 1))
+                gini_cv_tmp[iter, fold] = ml_score( valid_labels[iter, fold, :num_valid_matrix[iter, fold]], pred_tmp)
         if np.mean(gini_cv_tmp) > best_gini:
             best_model_end = model_end_id
             best_gini = np.mean(gini_cv_tmp)
-        print "model end id %d, best_gini %f" %(model_end_id, best_gini)
+        print "model end id %d, best_gini %f" %(model_end_id, np.mean(gini_cv_tmp))
 
     print best_model_end
     print best_gini
 
-    path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[0] ])
-    with open(path, 'rb') as f:
-        y_pred = pickle.load(f)
-        y_pred = y_pred.argsort() + 1
+    #path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[0] ])
+    #with open(path, 'rb') as f:
+    #    y_pred = pickle.load(f)
+    #    y_pred = (y_pred.argsort() + 1)*1.0 / len(y_pred)
 
-    for mid in range(best_model_end + 1):
-        path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[mid] ])
-        with open(path, 'rb') as f:
-            y_pred_tmp = pickle.load(f)
-        y_pred += y_pred_tmp.argsort() + 1
+    #for mid in range(1, best_model_end + 1):
+    #    path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[mid] ])
+    #    with open(path, 'rb') as f:
+    #        y_pred_tmp = pickle.load(f)
+    #    y_pred += (y_pred_tmp.argsort() + 1)*1.0 / len(y_pred)
+    #    #y_pred += y_pred_tmp
 
-    y_pred = y_pred * 1.0 / (best_model_end + 1)
-    gen_subm(y_pred, 'sub/model_rank_avg.csv')
+    #y_pred = y_pred * 1.0 / (best_model_end + 1)
+    #gen_subm(y_pred, 'sub/model_rank_avg.csv')
 
     #TODO
 

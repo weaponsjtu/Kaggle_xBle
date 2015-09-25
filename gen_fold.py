@@ -9,9 +9,8 @@ import os
 from param import config
 
 train = pd.read_csv(config.origin_train_path, header=0)
-test = pd.read_csv(config.origin_test_path, header=0)
 
-y = train['Hazard'].values
+y = train[config.target].values
 
 skf = [0]*config.kiter
 for i in range(config.kiter):

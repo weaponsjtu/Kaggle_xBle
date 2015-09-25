@@ -9,28 +9,32 @@ import multiprocessing
 class ParamConfig:
     def __init__(self, data_folder):
         # target variable to predict
-        self.target = 'Hazard'
+        self.target = 'target'
+        self.tid = 'ID'
 
         # (3,3), (2, 5), (5, 2)
-        self.kfold = 5  # cross validation, k-fold
-        self.kiter = 2  # shuffle dataset, and repeat CV
+        self.kfold = 3  # cross validation, k-fold
+        self.kiter = 1  # shuffle dataset, and repeat CV
 
-        self.DEBUG = False
-        self.hyper_max_evals = 100
-        self.ensemble_max_evals = 50
+        self.DEBUG = True
+        self.use_mongo = True
+        self.mongo_server = 'mongo://172.16.13.7:27017/'
+        self.hyper_max_evals = 200
+        self.ensemble_max_evals = 200
 
         self.nthread = 2
         self.max_core = multiprocessing.cpu_count()
 
+
         if self.DEBUG:
-            self.hyper_max_evals = 5
-            self.ensemble_max_evals = 5
+            self.hyper_max_evals = 50
+            #self.ensemble_max_evals = 5
 
         self.origin_train_path = "../data/train.csv"
         self.origin_test_path = "../data/test.csv"
 
-        self.feat_names = ['standard', 'label', 'dictvec', 'onehot']
-        #self.feat_names = ['onehot']
+        #self.feat_names = ['stand', 'label', 'dictvec', 'onehot']
+        self.feat_names = ['label', 'onehot']
 
         self.data_folder = data_folder
         if not os.path.exists(self.data_folder):
@@ -47,9 +51,11 @@ class ParamConfig:
                 if not os.path.exists(path):
                     os.makedirs(path)
 
-        self.model_list = ['xgb_fix', 'logistic', 'knn', 'ridge', 'lasso', 'xgb_rank', 'xgb_linear', 'xgb_tree', 'xgb_art', 'rf', 'gbf']
-        #self.model_list = ['xgb_fix', 'knn', 'rf']
-        #self.model_list = ['xgb_fix']
+        #self.model_list = ['xgb_fix', 'logistic', 'knn', 'ridge', 'lasso', 'xgb_rank', 'xgb_linear', 'xgb_tree', 'xgb_art', 'xgb_binary', 'xgb_log', 'xgb_auc', 'rf', 'gbf']
+        #self.model_list = ['knn', 'rf']
+        #self.model_list = ['xgb_auc', 'xgb_log']
+        self.model_list = ['knn', 'rf', 'gbfC', 'xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_fix', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_linear_fix']
+        #self.model_list = ['xgb_fix', 'xgb_linear_fix']
 
         self.update_model = ['']
         self.model_type = ''
@@ -78,7 +84,7 @@ class ParamConfig:
                 'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
             },
             'rfC': {
-                'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
+                'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 100)),
                 'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
             },
             'extratree': {
@@ -97,9 +103,9 @@ class ParamConfig:
                 'subsample': hp.quniform('subsample', 0.5, 1.0, 0.1),
             },
             'gbfC': {
-                'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
-                'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
-                'learning_rate': hp.quniform('learning_rate', 0.01, 0.5, 0.01),
+                'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 10, 100, 10)),
+                #'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
+                #'learning_rate': hp.quniform('learning_rate', 0.01, 0.5, 0.01),
                 'max_depth': hp.quniform('max_depth', 1, 15, 1),
                 'subsample': hp.quniform('subsample', 0.5, 1.0, 0.1),
             },
@@ -119,7 +125,34 @@ class ParamConfig:
                 'alpha' : hp.quniform('alpha', 0, 0.5, 0.005),
                 'lambda_bias' : hp.quniform('lambda_bias', 0, 3, 0.1),
                 'num_rounds' : 10000,
-                'num_class': 2,
+                'silent' : 1,
+                'verbose': 0,
+                'early_stopping_rounds': 120,
+                'nthread': 1,
+            },
+            'xgb_log': {
+                'booster': 'gblinear',
+                'objective': 'binary:logistic',
+                'eval_metric': 'logloss',
+                'eta' : hp.quniform('eta', 0.01, 1, 0.01),
+                'lambda' : hp.quniform('lambda', 0, 5, 0.05),
+                'alpha' : hp.quniform('alpha', 0, 0.5, 0.005),
+                'lambda_bias' : hp.quniform('lambda_bias', 0, 3, 0.1),
+                'num_rounds' : 10000,
+                'silent' : 1,
+                'verbose': 0,
+                'early_stopping_rounds': 120,
+                'nthread': 1,
+            },
+            'xgb_auc': {
+                'booster': 'gblinear',
+                'objective': 'binary:logistic',
+                'eval_metric': 'auc',
+                'eta' : hp.quniform('eta', 0.01, 1, 0.01),
+                'lambda' : hp.quniform('lambda', 0, 5, 0.05),
+                'alpha' : hp.quniform('alpha', 0, 0.5, 0.005),
+                'lambda_bias' : hp.quniform('lambda_bias', 0, 3, 0.1),
+                'num_rounds' : 10000,
                 'silent' : 1,
                 'verbose': 0,
                 'early_stopping_rounds': 120,
@@ -164,18 +197,33 @@ class ParamConfig:
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
-            'xgb_tree': {
-                'booster': 'gbtree',
-                'objective': 'reg:linear',
-                #'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 1000, 100)),
-                'eta': hp.quniform('eta', 0.01, 1, 0.01),
-                'gamma': hp.quniform('gamma', 0, 2, 0.1),
-                'min_child_weight': pyll.scope.int( hp.quniform('min_child_weight', 0, 10, 1) ),
-                'subsample': hp.quniform('subsample', 0.7, 0.9, 0.05),
+            'xgb_tree_auc': {
+                'objective': 'binary:logistic',
+                'eta': 0.01, #hp.quniform('eta', 0.01, 1, 0.01),
+                #'gamma': hp.quniform('gamma', 0, 2, 0.1),
+                'min_child_weight': pyll.scope.int( hp.quniform('min_child_weight', 5, 7, 1) ),
+                'subsample': hp.quniform('subsample', 0.6, 0.8, 0.1),
+                'eval_metric': 'auc',
                 'silent': 1,
                 'verbose': 0,
-                'max_depth': pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
-                'num_rounds': 10000,
+                'max_depth': pyll.scope.int(hp.quniform('max_depth', 7, 9, 1)),
+                'colsample_bytree': 0.8, #hp.quniform('colsample_bytree', 0.1, 1, 0.1),
+                'num_rounds': 1000,
+                'early_stopping_rounds': 120,
+                'nthread': 1,
+            },
+            'xgb_tree_log': {
+                'objective': 'binary:logistic',
+                'eta': 0.01, #hp.quniform('eta', 0.01, 1, 0.01),
+                #'gamma': hp.quniform('gamma', 0, 2, 0.1),
+                'min_child_weight': pyll.scope.int( hp.quniform('min_child_weight', 5, 7, 1) ),
+                'subsample': hp.quniform('subsample', 0.6, 0.8, 0.1),
+                'eval_metric': 'logloss',
+                'silent': 1,
+                'verbose': 0,
+                'max_depth': pyll.scope.int(hp.quniform('max_depth', 7, 9, 1)),
+                'colsample_bytree': 0.8, #hp.quniform('colsample_bytree', 0.1, 1, 0.1),
+                'num_rounds': 1000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
@@ -196,70 +244,34 @@ class ParamConfig:
                 'nthread': 1,
             },
             'xgb_fix': {
-                'objective': 'reg:linear',
+                'objective': 'binary:logistic',
                 'eta': 0.005,
                 'min_child_weight': 6,
-                'subsample': hp.quniform('subsample', 0.5, 1.0, 0.01),
-                'colsample_bytree': 0.7,
+                'subsample':0.7, #hp.quniform('subsample', 0.5, 1.0, 0.01),
+                'eval_metric': 'logloss',
+                'colsample_bytree': 0.8,
                 'scale_pos_weight': 1,
                 'silent': 1,
                 'verbose': 0,
-                'max_depth': pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
-                'num_rounds': 10000,
-                'valid_size': 0.07843291,
+                'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
+                'num_rounds': 1000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
-        }
-        self.best_param = {
-            'linear': {
-            },
-            'logistic': {
-            },
-            'knn': {
-                'n_neighbors': 8,
-                'weights': 'distance',
-            },
-            'rf': {
-                'n_estimators': 700,
-            },
-            'extratree': {
-                'n_estimators': 100,
-            },
-            'gbf': {
-                'n_estimators': 100,
-            },
-            'svr': {
-                'C': 1,
-            },
-            'xgboost': {
-                'booster': 'gbtree',
+            'xgb_linear_fix': {
                 'objective': 'reg:linear',
                 'eta': 0.005,
                 'min_child_weight': 6,
-                'subsample': 0.7,
-                'colsample_bytree': 0.7,
-                'silent': 1,
-                'max_depth': 9,
-                'num_rounds': 10000,
-                'early_stopping_rounds': 120,
-            },
-            'xgboost-art': {
-                #'booster': 'gbtree',
-                'objective': 'reg:linear',
-                'eta': 0.005,
-                'min_child_weight': 6,
-                'subsample': 0.7,
-                'colsample_bytree': 0.7,
+                'subsample':0.7, #hp.quniform('subsample', 0.5, 1.0, 0.01),
+                'eval_metric': 'logloss',
+                'colsample_bytree': 0.8,
                 'scale_pos_weight': 1,
                 'silent': 1,
-                'max_depth': 9,
-                'num_rounds': 10000,
-                'valid_size': 0.07843291,
+                'verbose': 0,
+                'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
+                'num_rounds': 1000,
                 'early_stopping_rounds': 120,
-            },
-            'dnn': {
-                'batch_size': 16,
+                'nthread': 1,
             },
         }
 
