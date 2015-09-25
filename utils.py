@@ -46,37 +46,6 @@ def stretch_lr(y_pred):
     y_pred = y_pred * 1.0 / y_pred.max()
     return y_pred
 
-# check if we have generate every prediction for this model
-def check_model(model_name):
-    for iter in range(config.kiter):
-        for fold in range(config.kfold):
-            if os.path.exists('%s/iter%d/fold%d/%s.pred.pkl' %(config.data_folder, iter, fold, model_name)) is False:
-                return False
-
-    if os.path.exists('%s/all/%s.pred.pkl' %(config.data_folder, model_name)) is False:
-        return False
-
-    return True
-
-def gen_model_library():
-    # load feat, labels and pred
-    feat_names = config.feat_names
-    model_list = config.model_list
-
-    # combine them, and generate whold model_list
-    model_library = []
-    for feat in feat_names:
-        for model in model_list:
-            if check_model("%s_%s"%(feat, model)):
-                model_library.append("%s_%s" %(feat, model))
-            for num in range(1, config.hyper_max_evals+1):
-                model_name = "%s_%s@%d" %(feat, model, num)
-                if check_model(model_name):
-                    model_library.append(model_name)
-
-    #model_library = add_prior_models(model_library)
-    return model_library
-
 def cv_split(train_z, labels_z, kfold, kiter):
     train_subsets_k = []
     label_subsets_k = []
@@ -102,27 +71,6 @@ def cv_split(train_z, labels_z, kfold, kiter):
         train_subsets_k.append( train_subsets )
         label_subsets_k.append( label_subsets )
     return train_subsets_k, label_subsets_k
-
-def gen_subm(y_pred, filename=None):
-    test = pd.read_csv(config.origin_test_path, index_col=0)
-    idx = test.index
-    preds = pd.DataFrame({config.tid: idx, config.target: y_pred})
-    preds = preds.set_index(config.tid)
-
-    mid_file = 'sub/mid.pkl'
-    mid = 1
-    if os.path.exists(mid_file):
-        with open(mid_file, 'rb') as f:
-            mid = pickle.load(f)
-    with open(mid_file, 'wb') as f:
-        pickle.dump(mid + 1, f, -1)
-
-    if filename != None:
-        temps = filename.split('.')
-        filename = temps[0] + '@' + str(mid) + '.' + temps[1]
-        preds.to_csv(filename)
-    else:
-        preds.to_csv("sub/model_library@%d.csv"%mid)
 
 
 def write_submission(idx, pred, filename):
@@ -274,51 +222,6 @@ def feature_selection():
     with open('remove_keys.pkl', 'wb') as f:
         pickle.dump(remove_keys, f, -1)
 
-def get_best_mean():
-    model_library = gen_model_library()
-    path = '%s/all/' %(config.data_folder)
-    for model in model_library:
-        score_cv = []
-        mean_cv = []
-        for iter in range(config.kiter):
-            for fold in range(config.kfold):
-                with open('%s/iter%d/fold%d/%s.pred.pkl' %(config.data_folder, iter, fold, model), 'rb') as f:
-                    y_pred = pickle.load(f)
-
-                with open('%s/iter%d/fold%d/valid.true.pkl' %(config.data_folder, iter, fold), 'rb') as f:
-                    y_true = pickle.load(f)
-
-                #if np.mean(y_pred) > 0.229:
-                #    gap = np.mean(y_pred) - 0.229
-                #    for i in range(len(y_pred)):
-                #        if y_pred[i] > gap:
-                #            y_pred[i] = y_pred[i] - gap
-
-                #if np.mean(y_pred) < 0.229:
-                #    gap = 0.229 - np.mean(y_pred)
-                #    for i in range(len(y_pred)):
-                #        if y_pred[i] < 1 - gap:
-                #            y_pred[i] = y_pred[i] + gap
-
-                score_cv.append( ml_score(y_true, y_pred) )
-                mean_cv.append(np.mean(y_pred))
-
-        #with open('%s/%s.pred.pkl' %(path, model), 'rb') as f:
-        #    y_pred = pickle.load(f)
-
-        #if np.mean(y_pred) > 0.229:
-        #    gap = np.mean(y_pred) - 0.229
-        #    for i in range(len(y_pred)):
-        #        if y_pred[i] > gap:
-        #            y_pred[i] = y_pred[i] - gap
-
-        #if np.mean(y_pred) < 0.229:
-        #    gap = 0.229 - np.mean(y_pred)
-        #    for i in range(len(y_pred)):
-        #        if y_pred[i] < 1 - gap:
-        #            y_pred[i] = y_pred[i] + gap
-
-        print model, np.mean(mean_cv), np.mean(score_cv)
 
 
 if __name__ == '__main__':
@@ -328,5 +231,4 @@ if __name__ == '__main__':
     #model_relation(sys.argv[1], sys.argv[2])
     #test()
     #print check_better(sys.argv[1])
-    #feature_selection()
-    get_best_mean()
+    feature_selection()

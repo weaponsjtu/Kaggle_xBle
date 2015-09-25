@@ -17,24 +17,21 @@ class ParamConfig:
         self.kiter = 1  # shuffle dataset, and repeat CV
 
         self.DEBUG = True
-        self.use_mongo = True
-        self.mongo_server = 'mongo://172.16.13.7:27017/'
-        self.hyper_max_evals = 200
-        self.ensemble_max_evals = 200
+        self.hyper_max_evals = 100
+        self.ensemble_max_evals = 50
 
         self.nthread = 2
         self.max_core = multiprocessing.cpu_count()
 
-
         if self.DEBUG:
-            self.hyper_max_evals = 50
+            self.hyper_max_evals = 1
             #self.ensemble_max_evals = 5
 
         self.origin_train_path = "../data/train.csv"
         self.origin_test_path = "../data/test.csv"
 
         #self.feat_names = ['stand', 'label', 'dictvec', 'onehot']
-        self.feat_names = ['label', 'onehot']
+        self.feat_names = ['onehot']
 
         self.data_folder = data_folder
         if not os.path.exists(self.data_folder):
@@ -52,10 +49,10 @@ class ParamConfig:
                     os.makedirs(path)
 
         #self.model_list = ['xgb_fix', 'logistic', 'knn', 'ridge', 'lasso', 'xgb_rank', 'xgb_linear', 'xgb_tree', 'xgb_art', 'xgb_binary', 'xgb_log', 'xgb_auc', 'rf', 'gbf']
-        #self.model_list = ['knn', 'rf']
+        #self.model_list = ['xgb_fix', 'knn', 'rf']
         #self.model_list = ['xgb_auc', 'xgb_log']
-        self.model_list = ['knn', 'rf', 'gbfC', 'xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_fix', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_linear_fix']
-        #self.model_list = ['xgb_fix', 'xgb_linear_fix']
+        #self.model_list = ['gbfC', 'xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_fix', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_linear_fix']
+        self.model_list = ['xgb_fix']
 
         self.update_model = ['']
         self.model_type = ''
@@ -248,14 +245,14 @@ class ParamConfig:
                 'eta': 0.005,
                 'min_child_weight': 6,
                 'subsample':0.7, #hp.quniform('subsample', 0.5, 1.0, 0.01),
-                'eval_metric': 'logloss',
+                'eval_metric': 'auc',
                 'colsample_bytree': 0.8,
                 'scale_pos_weight': 1,
                 'silent': 1,
                 'verbose': 0,
                 'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
                 'num_rounds': 1000,
-                'early_stopping_rounds': 120,
+                'early_stopping_rounds': 360,
                 'nthread': 1,
             },
             'xgb_linear_fix': {
@@ -263,14 +260,14 @@ class ParamConfig:
                 'eta': 0.005,
                 'min_child_weight': 6,
                 'subsample':0.7, #hp.quniform('subsample', 0.5, 1.0, 0.01),
-                'eval_metric': 'logloss',
+                'eval_metric': 'auc',
                 'colsample_bytree': 0.8,
                 'scale_pos_weight': 1,
                 'silent': 1,
                 'verbose': 0,
                 'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
                 'num_rounds': 1000,
-                'early_stopping_rounds': 120,
+                'early_stopping_rounds': 360,
                 'nthread': 1,
             },
         }
