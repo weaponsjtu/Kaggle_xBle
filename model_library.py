@@ -327,7 +327,9 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
     ######
     gini_cv = np.zeros((config.kiter, config.kfold), dtype=float)
 
-    if config.nthread == 1: # single process
+    if config.nthread == 1 or model_type.count('xgb') > 0: # single process
+        if model_type.count('xgb') > 0:
+            model_param['nthread'] = config.max_core
         for iter in range(config.kiter):
             for fold in range(config.kfold):
                 # load data
@@ -375,6 +377,9 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
     with open("%s/test.%s.feat.pkl" %(path, feat), 'rb') as f:
         [x_test, y_test] = pickle.load(f)
     f.close()
+
+    if model_type.count('xgb') > 0:
+        model_param['nthread'] = config.max_core
     pred_val = hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test)
     # save the pred for train/test
     pred_file = "%s/%s_%s@%d.pred.pkl" %(path, feat, model_type, trials_counter)
@@ -385,10 +390,28 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
     return gini_cv_mean, gini_cv_std
     ######
 
+## preprocessing the feature data
+# 1. standardization
+# 2. normalization
+# 3. binarization
+# 4. encoding categorical feature
+# 5. imputation of missing values
+##
+def preprocess_data(x_train, x_test):
+    sc = StandardScaler(copy=True, with_mean=True, with_std=True)
+    sc.fit(x_train)
+    x_train = sc.transform(x_train)
+    x_test = sc.transform(x_test)
+    return x_train, x_test
+
 
 
 def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
     try:
+        # preprocess data for xgb model
+        if model_type.count('xgb') > 0:
+            x_train, x_test = preprocess_data(x_train, x_test)
+
         # training
         if model_type.count('dnn') > 0:
             print "%s training..." % model_type
@@ -448,7 +471,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
         # SVM regression
         if model_type.count('svr') > 0:
             print "%s training..." % model_type
-            model = SVR(C=model_param['C'], epsilon=model_param['epsilon'])
+            model = SVR(kernel=model_param['kernel'], C=model_param['C'], epsilon=model_param['epsilon'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
 
@@ -541,7 +564,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             #train using early stopping and predict
             watchlist = [(xgtrain, "train")]
             #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
-            model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
+            model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=model_param['early_stopping_rounds'])
             pred_val = model.predict( xgval )
 
         if model_type.count('xgb_multi') > 0:
@@ -555,7 +578,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
             pred_val = model.predict( xgval )
 
-        if model_type.count('xgb_tree_auc') or model_type.count('xgb_tree_log') > 0 or model_type.count('xgb_fix') > 0:
+        if model_type.count('xgb_tree_auc') or model_type.count('xgb_tree_log') > 0 or model_type.count('xgb_fix') > 0 or model_type.count('xgb_fix_log') > 0:
             print "%s training..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']

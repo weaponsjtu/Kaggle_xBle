@@ -41,7 +41,7 @@ class StackProcess(multiprocessing.Process):
         self.gini_cv = gini_cv
 
     def run(self):
-        y_pred = xgb_train(self.x_train, self.y_train, self.x_test)
+        y_pred = xgb_train(self.x_train, self.y_train, self.x_test, self.y_test)
         self.gini_cv.append(ml_score(self.y_test, y_pred))
         print "Process %d done! ml_score is %f" %(os.getpid(),  ml_score(self.y_test, y_pred))
 
@@ -59,16 +59,36 @@ def gen_base_model():
                 model_library.append("%s_%s" %(feat, model))
             #for num in range(config.hyper_max_evals - 10, config.hyper_max_evals+1):
             for num in range(config.hyper_max_evals):
-                model_name = "%s_%s@%d" %(feat, model, num)
+                model_name = "%s_%s@%d" %(feat, model, num+1)
                 if check_model(model_name):
                     model_library.append(model_name)
-                    #break
+                    break
 
     #model_library = add_prior_models(model_library)
     return model_library
 
 # stacking
 def model_stacking():
+    model_library = gen_base_model()
+    print len(model_library)
+    print model_library
+
+    best_model = []
+    for model in model_library:
+        score_cv = []
+        for iter in range(config.kiter):
+            for fold in range(config.kfold):
+                with open("%s/iter%d/fold%d/%s.pred.pkl"%(config.data_folder, iter, fold, model), 'rb') as f:
+                    y_pred = pickle.load(f)
+                with open("%s/iter%d/fold%d/valid.true.pkl"%(config.data_folder, iter, fold), 'rb') as f:
+                    y_true = pickle.load(f)
+                score_cv.append( ml_score(y_true, y_pred) )
+        if np.mean(score_cv) > 0.786:
+            print model, np.mean(score_cv)
+            best_model.append(model)
+    model_library = best_model
+    #############################################
+
     # load data
     #train = pd.read_csv(config.origin_train_path, index_col=0)
     #test = pd.read_csv(config.origin_test_path, index_col=0)
@@ -81,9 +101,6 @@ def model_stacking():
     y_len = len(t_label)
 
 
-    model_library = gen_base_model()
-    print len(model_library)
-    print model_library
     blend_train = np.zeros((len(x_label), len(model_library), config.kiter))
     blend_test = np.zeros((y_len, len(model_library)))
 
@@ -113,44 +130,45 @@ def model_stacking():
 
     return blend_train, blend_test, x_label, model_library
 
-def xgb_train(x_train, x_label, x_test):
+def xgb_train(x_train, x_label, x_test, y_test):
     #model = 'xgb'
     ##model = 'adaboost'
     ##if model.count('xgb') >0:
-    #params = {}
-    #params["objective"] = "binary:logistic"
-    #params["eta"] = 0.01  # [0,1]
-    #params["min_child_weight"] = 6
-    #params["subsample"] = 0.7
-    #params["colsample_bytree"] = 0.8
-    #params["scale_pos_weight"] = 1.0
-    #params["eval_metric"] = 'auc'
-    #params["silent"] = 1
-    #params["max_depth"] = 8
+    params = {}
+    params["objective"] = "binary:logistic"
+    params["eta"] = 0.01  # [0,1]
+    params["min_child_weight"] = 6
+    params["subsample"] = 0.7
+    params["colsample_bytree"] = 0.8
+    params["scale_pos_weight"] = 1.0
+    params["eval_metric"] = 'auc'
+    params["silent"] = 1
+    params["max_depth"] = 8
+    params["nthread"] = 16
     #if config.nthread > 1:
     #    params["nthread"] = 1
 
-    #num_rounds = 1000
+    num_rounds = 5000
 
-    #xgtrain = xgb.DMatrix(x_train, label=x_label)
-    #xgval = xgb.DMatrix(x_test)
+    xgtrain = xgb.DMatrix(x_train, label=x_label)
+    xgval = xgb.DMatrix(x_test, label=y_test)
 
-    #watchlist = [(xgtrain, "train")]
-    #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
-    #pred1 = model.predict( xgval )
+    watchlist = [(xgtrain, "train"), (xgval, "val")]
+    model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
+    pred = model.predict( xgval )
 
     #clf = RandomForestRegressor()
     #clf = LogisticRegression()
-    clf = GradientBoostingRegressor()
-    cal_clf = CalibratedClassifierCV(clf, method='isotonic', cv=5)
+    #clf = GradientBoostingRegressor()
+    #cal_clf = CalibratedClassifierCV(clf, method='isotonic', cv=5)
 
     #clf = Lasso()
     #clf = AdaBoostRegressor( ExtraTreesRegressor(max_depth=8), n_estimators=20 )
     #clf.fit(x_train, x_label)
     #pred = clf.predict(x_test)
-    cal_clf.fit(x_train, x_label)
-    pred = cal_clf.predict_proba(x_test)
-    pred = pred[:, 1]
+    #cal_clf.fit(x_train, x_label)
+    #pred = cal_clf.predict_proba(x_test)
+    #pred = pred[:, 1]
 
     #pred = pred1 * pred2 / (pred1 + pred2)
     #pred = 0.7 * (pred1**0.01) + 0.3 * (pred2**0.01)
@@ -163,14 +181,19 @@ def stacking_base(blend_train, blend_test, x_label, model_library):
     print "Blending..., 4->9"
 
     ## kfold cv
-    kf = cross_validation.KFold(n=blend_train.shape[0], n_folds=3, shuffle=False, random_state=None)
+    #kf = cross_validation.KFold(n=blend_train.shape[0], n_folds=3, shuffle=False, random_state=None)
+    with open("%s/fold.pkl" % config.data_folder, 'rb') as i_f:
+        kf = pickle.load(i_f)
 
+
+    config.nthread = 1
     if config.nthread > 1:
         mp_list = []
         manager = multiprocessing.Manager()
         gini_cv = manager.list()
         for iter in range(config.kiter):
-            for train_index, test_index in kf:
+            #for train_index, test_index in kf:
+            for fold, (train_index, test_index) in enumerate(kf[iter]):
                 x_train, x_test = blend_train[train_index, :, iter], blend_train[test_index, :, iter]
                 y_train, y_test = x_label[train_index], x_label[test_index]
 
@@ -187,60 +210,67 @@ def stacking_base(blend_train, blend_test, x_label, model_library):
     else:
         gini_cv = []
         #for iter in range(config.kiter):
-        for iter in range(1):
-            for train_index, test_index in kf:
+        for iter in range(config.kiter):
+            #for train_index, test_index in kf:
+            for fold, (train_index, test_index) in enumerate(kf[iter]):
                 x_train, x_test = blend_train[train_index, :, iter], blend_train[test_index, :, iter]
                 y_train, y_test = x_label[train_index], x_label[test_index]
                 #clf.fit(x_train, y_train)
                 #y_pred = clf.predict(x_test)
-                y_pred = xgb_train(x_train, y_train, x_test)
+                y_pred = xgb_train(x_train, y_train, x_test, y_test)
                 gini_cv.append(ml_score(y_test, y_pred))
+                break
         print "Average gini is %f" %(np.mean(gini_cv))
 
 
-    y_sub = np.zeros((blend_test.shape[0]))
-    #for iter in range(config.kiter):
-    for iter in range(1):
-        #clf.fit(blend_train[:, :, iter], x_label)
-        #y_pred = clf.predict(blend_test)
-        y_pred = xgb_train(blend_train[:, :, iter], x_label, blend_test)
-        y_sub += y_pred
-    y_sub = y_sub / config.kiter
-    gen_subm(y_sub, 'sub/model_stack.csv')
+    #y_sub = np.zeros((blend_test.shape[0]))
+    ##for iter in range(config.kiter):
+    #for iter in range(1):
+    #    #clf.fit(blend_train[:, :, iter], x_label)
+    #    #y_pred = clf.predict(blend_test)
+    #    y_pred = xgb_train(blend_train[:, :, iter], x_label, blend_test)
+    #    y_sub += y_pred
+    #y_sub = y_sub / config.kiter
+    #gen_subm(y_sub, 'sub/model_stack.csv')
 
 def stacking_nonlinear(blend_train_raw, blend_test_raw, x_label, model_library):
     print "stacking nonlinear"
+    feat = "label"
+
     # add raw feature
-    with open("%s/all/train.onehot.feat.pkl" %(config.data_folder), 'rb') as f:
+    with open("%s/all/train.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
         [x_train, y_train] = pickle.load(f)
-    with open("%s/all/test.onehot.feat.pkl" %(config.data_folder), 'rb') as f:
+    with open("%s/all/test.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
         [x_test, y_test] = pickle.load(f)
 
     if type(x_train) != np.ndarray:
         x_train = x_train.toarray()
         x_test = x_test.toarray()
 
-    meta_feature_dim = 4 + x_train.shape[1]
+    # check base
+    model_library = []
+
+    meta_feature_dim = x_train.shape[1]
     blend_train = np.zeros((len(x_label), len(model_library) + meta_feature_dim, config.kiter))
-    blend_train[:, :len(model_library), :] = blend_train_raw
+    #blend_train[:, :len(model_library), :] = blend_train_raw
     blend_test = np.zeros((blend_test_raw.shape[0], len(model_library) + meta_feature_dim))
-    blend_test[:, :len(model_library)] = blend_test_raw
+    #blend_test[:, :len(model_library)] = blend_test_raw
 
-    # KNN feature, 4 dimension
-    with open('../train_feature_engineered.pkl', 'rb') as f:
-        df_train = pickle.load(f)
-    with open('../test_feature_engineered.pkl', 'rb') as f:
-        df_test = pickle.load(f)
+    ## KNN feature, 4 dimension
+    #with open('../train_feature_engineered.pkl', 'rb') as f:
+    #    df_train = pickle.load(f)
+    #with open('../test_feature_engineered.pkl', 'rb') as f:
+    #    df_test = pickle.load(f)
 
-    knn_feats = ['meanH_N_1', 'meanH_N_2', 'meanH_N_4', 'meanH_N_8']
-    for i in range(4):
-        for iter in range(config.kiter):
-            blend_train[:, len(model_library) + i, iter] = df_train[ knn_feats[i] ].values
-        blend_test[:, len(model_library) + i] = df_test[ knn_feats[i] ].values
+    #knn_feats = ['meanH_N_1', 'meanH_N_2', 'meanH_N_4', 'meanH_N_8']
+    #for i in range(4):
+    #    for iter in range(config.kiter):
+    #        blend_train[:, len(model_library) + i, iter] = df_train[ knn_feats[i] ].values
+    #    blend_test[:, len(model_library) + i] = df_test[ knn_feats[i] ].values
 
     for iter in range(config.kiter):
-        blend_train[:, (len(model_library) + 4):, iter] = x_train
-    blend_test[:, (len(model_library) + 4):] = x_test
+        blend_train[:, len(model_library):, iter] = x_train
+    blend_test[:, len(model_library):] = x_test
 
 
 
@@ -271,8 +301,8 @@ if __name__ == '__main__':
     #model_stacking()
     blend_train, blend_test, x_label, model_library = model_stacking()
     print "Feature done!!!"
-    stacking_base(blend_train, blend_test, x_label, model_library)
-    #stacking_nonlinear(blend_train, blend_test, x_label, model_library)
+    #stacking_base(blend_train, blend_test, x_label, model_library)
+    stacking_nonlinear(blend_train, blend_test, x_label, model_library)
 
     end_time = time.time()
     print "cost time %f" %( (end_time - start_time)/1000 )

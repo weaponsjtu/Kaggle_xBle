@@ -24,26 +24,6 @@ from param import config
 from utils import *
 
 
-def gen_subm(y_pred, filename=None):
-    test = pd.read_csv(config.origin_test_path, index_col=0)
-    idx = test.index
-    preds = pd.DataFrame({config.tid: idx, config.target: y_pred})
-    preds = preds.set_index(config.tid)
-
-    mid_file = 'sub/mid.pkl'
-    mid = 1
-    if os.path.exists(mid_file):
-        with open(mid_file, 'rb') as f:
-            mid = pickle.load(f)
-    with open(mid_file, 'wb') as f:
-        pickle.dump(mid + 1, f, -1)
-
-    if filename != None:
-        temps = filename.split('.')
-        filename = temps[0] + '@' + str(mid) + '.' + temps[1]
-        preds.to_csv(filename)
-    else:
-        preds.to_csv("sub/model_library@%d.csv"%mid)
 
 
 def add_prior_models(model_library):
@@ -143,37 +123,6 @@ def ensemble_selection_obj(param, model1_pred, model2_pred, labels, num_valid_ma
     gini_mean = np.mean(gini_cv)
     return -gini_mean
 
-# check if we have generate every prediction for this model
-def check_model(model_name):
-    for iter in range(config.kiter):
-        for fold in range(config.kfold):
-            if os.path.exists('%s/iter%d/fold%d/%s.pred.pkl' %(config.data_folder, iter, fold, model_name)) is False:
-                return False
-
-    if os.path.exists('%s/all/%s.pred.pkl' %(config.data_folder, model_name)) is False:
-        return False
-
-    return True
-
-
-def gen_model_library():
-    # load feat, labels and pred
-    feat_names = config.feat_names
-    model_list = config.model_list
-
-    # combine them, and generate whold model_list
-    model_library = []
-    for feat in feat_names:
-        for model in model_list:
-            if check_model("%s_%s"%(feat, model)):
-                model_library.append("%s_%s" %(feat, model))
-            for num in range(1, config.hyper_max_evals+1):
-                model_name = "%s_%s@%d" %(feat, model, num)
-                if check_model(model_name):
-                    model_library.append(model_name)
-
-    #model_library = add_prior_models(model_library)
-    return model_library
 
 def ensemble_selection():
     # load feat, labels and pred
