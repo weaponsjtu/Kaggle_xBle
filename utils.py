@@ -74,8 +74,21 @@ def gen_model_library():
     return model_library
 
 def gen_subm(y_pred, filename=None):
-    test = pd.read_csv(config.origin_test_path, index_col=0)
-    idx = test.index
+    flag = 0
+    for p in y_pred:
+        if p < 0:
+            flag = 1
+            break
+    y_pred = np.array(y_pred)
+    y_max = np.max(y_pred)
+    y_min = np.min(y_pred)
+    if flag == 1:
+        y_pred = (y_pred - y_min) * 1.0 / (y_max - y_min)
+
+
+    #test = pd.read_csv(config.origin_test_path, index_col=0)
+    test = pd.read_csv("sub/model_library.csv", header=0)
+    idx = test.ID.values
     preds = pd.DataFrame({config.tid: idx, config.target: y_pred})
     preds = preds.set_index(config.tid)
 
@@ -281,6 +294,8 @@ def print_model_score():
     print model_library
 
     best_model = []
+    best_score = 0
+    best_m = ""
     for model in model_library:
         score_cv = []
         for iter in range(config.kiter):
@@ -290,21 +305,33 @@ def print_model_score():
                 with open("%s/iter%d/fold%d/valid.true.pkl"%(config.data_folder, iter, fold), 'rb') as f:
                     y_true = pickle.load(f)
                 score_cv.append( ml_score(y_true, y_pred) )
-        if np.mean(score_cv) > 0.78:
+        if np.mean(score_cv) > 0.7:
             print model, np.mean(score_cv)
             best_model.append(model)
 
-    for iter in range(config.kiter):
-        for fold in range(config.kfold):
-            preds = []
-            for model in best_model:
-                with open("%s/iter%d/fold%d/%s.pred.pkl"%(config.data_folder, iter, fold, model), 'rb') as f:
-                    y_pred = pickle.load(f)
-                preds.append(y_pred)
-            for i in range(1, len(preds)):
-                print np.corrcoef(preds[0], preds[i], rowvar=0)
-            break
+            if np.mean(score_cv) > best_score:
+                best_m = model
+                best_score = np.mean(score_cv)
 
+    best_model.append(best_m)
+    best_model.reverse()
+    print best_model
+    for iter in range(config.kiter):
+        preds = []
+        for model in best_model:
+            with open("%s/all/%s.pred.pkl"%(config.data_folder, model), 'rb') as f:
+                y_pred = pickle.load(f)
+            preds.append(y_pred)
+        for i in range(1, len(preds)):
+            print best_model[i], np.corrcoef(preds[0], preds[i], rowvar=0)[0][1]
+
+def show_pred():
+    model = "label_xgb_linear_fix@1"
+    with open("%s/all/%s.pred.pkl" %(config.data_folder, model), 'rb') as f:
+        pred = pickle.load(f)
+    for p in pred:
+        if p<0:
+            print p
 
 
 if __name__ == '__main__':
@@ -316,3 +343,4 @@ if __name__ == '__main__':
     #print check_better(sys.argv[1])
     #feature_selection()
     print_model_score()
+    #show_pred()

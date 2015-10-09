@@ -4,6 +4,8 @@ import cPickle as pickle
 import os
 
 from sklearn import preprocessing
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import TruncatedSVD
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn.svm import SVR, SVC
@@ -277,21 +279,24 @@ def train_model(path, x_train, y_train, x_test, y_test, feat, param_best_dic):
 
 def one_model():
     # load feat names
-    feat_names = config.feat_names
+    #feat_names = config.feat_names
+    feat_names = ['label', 'fs']
+    model_type = "knn"
+    model_param = config.param_spaces[model_type]
 
-    # load best params for each model (feat, model)
-    with open("%s/model_best_params" %config.data_folder) as f:
-        param_best_dic = pickle.load(f)
+    ## load best params for each model (feat, model)
+    #with open("%s/model_best_params" %config.data_folder) as f:
+    #    param_best_dic = pickle.load(f)
 
-    # supply the extra parameter from config.param_spaces
-    for feat in config.feat_names:
-        for model in config.model_list:
-            if param_best_dic.has_key("%s_%s"%(feat, model)):
-                param_space = config.param_spaces[model]
-                for key in param_space.keys():
-                    if param_best_dic["%s_%s"%(feat, model)].has_key(key) is False:
-                        param_best_dic["%s_%s"%(feat, model)][key] = param_space[key]
-    print param_best_dic
+    ## supply the extra parameter from config.param_spaces
+    #for feat in config.feat_names:
+    #    for model in config.model_list:
+    #        if param_best_dic.has_key("%s_%s"%(feat, model)):
+    #            param_space = config.param_spaces[model]
+    #            for key in param_space.keys():
+    #                if param_best_dic["%s_%s"%(feat, model)].has_key(key) is False:
+    #                    param_best_dic["%s_%s"%(feat, model)][key] = param_space[key]
+    #print param_best_dic
 
     # load feat, cross validation
     for iter in range(config.kiter):
@@ -301,19 +306,22 @@ def one_model():
                 with open("%s/iter%d/fold%d/train.%s.feat.pkl" %(config.data_folder, iter, fold, feat), 'rb') as f:
                     [x_train, y_train] = pickle.load(f)
                 with open("%s/iter%d/fold%d/valid.%s.feat.pkl" %(config.data_folder, iter, fold, feat), 'rb') as f:
-                    [x_val, y_val] = pickle.load(f)
+                    [x_test, y_test] = pickle.load(f)
                 path = "%s/iter%d/fold%d" %(config.data_folder, iter, fold)
-                train_model(path, x_train, y_train, x_val, y_val, feat, param_best_dic)
+                #train_model(path, x_train, y_train, x_val, y_val, feat, param_best_dic)
+                pred_val = hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test)
+                print "ml score is %f" %ml_score(y_test, pred_val)
+            break
 
-    # load feat, train/test
-    for feat in feat_names:
-        print "Gen pred for (%s) all test data" %(feat)
-        with open("%s/all/train.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
-            [x_train, y_train] = pickle.load(f)
-        with open("%s/all/test.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
-            [x_test, y_test] = pickle.load(f)
-        path = "%s/all" %(config.data_folder)
-        train_model(path, x_train, y_train, x_test, y_test, feat, param_best_dic)
+    ## load feat, train/test
+    #for feat in feat_names:
+    #    print "Gen pred for (%s) all test data" %(feat)
+    #    with open("%s/all/train.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
+    #        [x_train, y_train] = pickle.load(f)
+    #    with open("%s/all/test.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
+    #        [x_test, y_test] = pickle.load(f)
+    #    path = "%s/all" %(config.data_folder)
+    #    train_model(path, x_train, y_train, x_test, y_test, feat, param_best_dic)
 
 def hyperopt_wrapper(param, model_type, feat):
     global trials_counter
@@ -330,6 +338,7 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
     if config.nthread == 1 or model_type.count('xgb') > 0: # single process
         if model_type.count('xgb') > 0:
             model_param['nthread'] = config.max_core
+        print model_param
         for iter in range(config.kiter):
             for fold in range(config.kfold):
                 # load data
@@ -343,6 +352,8 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
                 pred_file = "%s/%s_%s@%d.pred.pkl" %(path, feat, model_type, trials_counter)
                 with open(pred_file, 'wb') as f:
                     pickle.dump(pred_val, f, -1)
+
+                print "Cross Validation %d_%d, score %f" %(iter, fold, ml_score(y_test, pred_val))
 
                 if model_type == 'logistic':
                     y_test = y_test / np.linalg.norm(y_test)
@@ -380,7 +391,7 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
 
     if model_type.count('xgb') > 0:
         model_param['nthread'] = config.max_core
-    pred_val = hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test)
+    pred_val = hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, "all")
     # save the pred for train/test
     pred_file = "%s/%s_%s@%d.pred.pkl" %(path, feat, model_type, trials_counter)
     with open(pred_file, 'wb') as f:
@@ -398,6 +409,13 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
 # 5. imputation of missing values
 ##
 def preprocess_data(x_train, x_test):
+    # log(x+1)
+    x_train = np.array(x_train)
+    x_test = np.array(x_test)
+    x_train = np.log(x_train.astype(int)+1)
+    x_test = np.log(x_test.astype(int)+1)
+
+    # standazition
     sc = StandardScaler(copy=True, with_mean=True, with_std=True)
     sc.fit(x_train)
     x_train = sc.transform(x_train)
@@ -406,7 +424,7 @@ def preprocess_data(x_train, x_test):
 
 
 
-def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
+def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, type="valid"):
     try:
         # preprocess data for xgb model
         if model_type.count('xgb') > 0:
@@ -419,6 +437,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model.fit(x_train, y_train, nb_epoch=2, batch_size=16)
             pred_val = model.predict( x_test, batch_size=16 )
             pred_val = pred_val.reshape( pred_val.shape[0] )
+            return pred_val
 
         # Nearest Neighbors, regression
         if model_type.count('knn') > 0:
@@ -428,6 +447,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model = neighbors.KNeighborsRegressor(n_neighbors=n_neighbors, weights=weights)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # Nearest Neighbors, classifier
         if model_type.count('knnC') > 0:
@@ -437,92 +457,105 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model = neighbors.KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # linear regression
-        if model_type.count('linear') > 0:
+        if model_type == 'linear':
             print "%s training..." % model_type
             model = LinearRegression()
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # logistic regression
-        if model_type.count('logistic') > 0:
+        if model_type == 'logistic':
             print "%s training..." % model_type
             model = LogisticRegression()
             y_train = y_train / np.linalg.norm(y_train)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # kernal ridge regression
-        if model_type.count('ridge') > 0:
+        if model_type == 'ridge':
             print "%s training..." % model_type
             model = Ridge(alpha=model_param['alpha'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # lasso regression
-        if model_type.count('lasso') > 0:
+        if model_type == 'lasso':
             print "%s training..." % model_type
             model = Ridge(alpha=model_param['alpha'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
 
         # SVM regression
-        if model_type.count('svr') > 0:
+        if model_type == 'svr':
             print "%s training..." % model_type
             model = SVR(kernel=model_param['kernel'], C=model_param['C'], epsilon=model_param['epsilon'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # SVM classification
-        if model_type.count('svc') > 0:
+        if model_type == 'svc':
             print "%s training..." % model_type
             model = SVC(C=model_param['C'], epsilon=model_param['epsilon'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # random forest regression
-        if model_type.count('rf') > 0:
+        if model_type == 'rf':
             print "%s training..." % model_type
             model = RandomForestRegressor(n_estimators=model_param['n_estimators'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # random forest classification
-        if model_type.count('rfC') > 0:
+        if model_type == 'rfC':
             print "%s training..." % model_type
             model = RandomForestClassifier(n_estimators=model_param['n_estimators'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # extra tree regression
-        if model_type.count('extratree') > 0:
+        if model_type == 'extratree':
             print "%s training..." % model_type
             model = ExtraTreesRegressor(n_estimators=model_param['n_estimators'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # extra tree classification
-        if model_type.count('extratreeC') > 0:
+        if model_type == 'extratreeC':
             print "%s training..." % model_type
             model = ExtraTreesClassifier(n_estimators=model_param['n_estimators'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # GBRT regression
-        if model_type.count('gbf') > 0:
+        if model_type == 'gbf':
             print "%s training..." % model_type
             model = GradientBoostingRegressor(n_estimators=model_param['n_estimators'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # GBRT classification
-        if model_type.count('gbfC') > 0:
+        if model_type == 'gbfC':
             print "%s training..." % model_type
             model = GradientBoostingClassifier(n_estimators=model_param['n_estimators'], subsample=model_param['subsample'], max_depth=model_param['max_depth'])
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
+            return pred_val
 
         # xgboost
         if model_type.count('xgb_binary') > 0 or model_type.count('xgb_log') > 0 or model_type.count('xgb_auc') > 0:
@@ -532,11 +565,13 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             #create a train and validation dmatrices
             xgtrain = xgb.DMatrix(x_train, label=y_train)
             xgval = xgb.DMatrix(x_test)
+            return pred_val
 
             #train using early stopping and predict
             watchlist = [(xgtrain, "train")]
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
             pred_val = model.predict( xgval )
+            return pred_val
 
         if model_type.count('xgb_rank') > 0:
             print "%s training..." % model_type
@@ -552,6 +587,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
             pred_val = model.predict( xgval, ntree_limit=model.best_iteration )
             #pred_val = [0]
+            return pred_val
 
         if model_type.count('xgb_linear') > 0:
             print "%s training..." % model_type
@@ -559,13 +595,16 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             num_rounds = model_param['num_rounds']
             #create a train and validation dmatrices
             xgtrain = xgb.DMatrix(x_train, label=y_train)
-            xgval = xgb.DMatrix(x_test)
-
-            #train using early stopping and predict
-            watchlist = [(xgtrain, "train")]
+            if type == "all":
+                xgval = xgb.DMatrix(x_test)
+                watchlist = [(xgtrain, "train")]
+            else:
+                xgval = xgb.DMatrix(x_test, label=y_test)
+                watchlist = [(xgtrain, "train"), (xgval, "val")]
             #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=model_param['early_stopping_rounds'])
             pred_val = model.predict( xgval )
+            return pred_val
 
         if model_type.count('xgb_multi') > 0:
             print "%s training..." % model_type
@@ -577,17 +616,22 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
             watchlist = [(xgtrain, "train")]
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
             pred_val = model.predict( xgval )
+            return pred_val
 
         if model_type.count('xgb_tree_auc') or model_type.count('xgb_tree_log') > 0 or model_type.count('xgb_fix') > 0 or model_type.count('xgb_fix_log') > 0:
             print "%s training..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']
             xgtrain = xgb.DMatrix(x_train, label=y_train)
-            xgval = xgb.DMatrix(x_test)
-
-            watchlist = [(xgtrain, "train")]
+            if type=="all":
+                xgval = xgb.DMatrix(x_test)
+                watchlist = [(xgtrain, "train")]
+            else:
+                xgval = xgb.DMatrix(x_test, label=y_test)
+                watchlist = [(xgtrain, "train"), (xgval, "val")]
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=model_param['early_stopping_rounds'])
             pred_val = model.predict( xgval, ntree_limit=model.best_iteration )
+            return pred_val
 
         if model_type.count('xgb_art') > 0:
             print "%s trainning..." % model_type
@@ -616,7 +660,10 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test):
 
             pred_val2 = model.predict(xgtest, ntree_limit=model.best_iteration)
             pred_val = pred_val1*1.5 + pred_val2*8.5
+            return pred_val
     except Exception as err:
+        print err
+        print "Function error."
         pred_val = [0] * len(y_test)
 
     return pred_val
@@ -659,11 +706,11 @@ def hyperopt_main():
     feat_names = config.feat_names
     model_list = config.model_list
     param_best_dic = {}
-    model_file = "%s/model_best_params" %config.data_folder
-    if os.path.exists(model_file):
-        with open(model_file, 'rb') as f:
-            param_best_dic = pickle.load(f)
-        f.close()
+    #model_file = "%s/model_best_params" %config.data_folder
+    #if os.path.exists(model_file):
+    #    with open(model_file, 'rb') as f:
+    #        param_best_dic = pickle.load(f)
+    #    f.close()
 
     for feat in feat_names:
         for model in model_list:
@@ -672,18 +719,20 @@ def hyperopt_main():
                 print "Training model %s_%s ......" %(feat, model)
                 model_param = config.param_spaces[model]
                 global trials_counter
-                trials_counter = 0
+                trials_counter = 5
                 trials = Trials()
                 #trials = MongoTrials('mongo://172.16.13.7/hazard/jobs', exp_key='exp%d'%trials_counter)
                 obj = lambda p: hyperopt_wrapper(p, model, feat)
                 tmp_max_evals = config.hyper_max_evals
                 best_params = fmin(obj, model_param, algo=tpe.suggest, trials=trials, max_evals=tmp_max_evals)
                 print best_params
-                param_best_dic[model_key] = best_params
 
-            with open(model_file, 'wb') as f:
-                pickle.dump(param_best_dic, f, -1)
-            f.close()
+                #param_best_dic[model_key] = best_params
+
+            #with open(model_file, 'wb') as f:
+            #    pickle.dump(param_best_dic, f, -1)
+            #f.close()
+
 
 if __name__ == '__main__':
     start_time = time.time()

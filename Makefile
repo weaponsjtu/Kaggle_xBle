@@ -11,7 +11,7 @@ model:
 	python model_library.py "train" | tee -a log/model.log
 
 opt:
-	python model_library.py "hyperopt" | tee -a log/hyperopt.log
+	python model_library.py "hyperopt" 2>&1 | tee -a log/hyperopt.log
 
 stack:
 	python gen_stacking.py | tee -a log/stacking.log

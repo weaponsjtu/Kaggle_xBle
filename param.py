@@ -24,14 +24,14 @@ class ParamConfig:
         self.max_core = multiprocessing.cpu_count()
 
         if self.DEBUG:
-            self.hyper_max_evals = 1
+            self.hyper_max_evals = 6
             #self.ensemble_max_evals = 5
 
         self.origin_train_path = "../data/train.csv"
         self.origin_test_path = "../data/test.csv"
 
         #self.feat_names = ['stand', 'label', 'dictvec', 'onehot']
-        self.feat_names = ['label', 'fs']
+        self.feat_names = ['label', 'fs', 'small', 'onehot']
 
         self.data_folder = data_folder
         if not os.path.exists(self.data_folder):
@@ -51,7 +51,7 @@ class ParamConfig:
         #self.model_list = ['xgb_fix', 'logistic', 'knn', 'ridge', 'lasso', 'xgb_rank', 'xgb_linear', 'xgb_tree', 'xgb_art', 'xgb_binary', 'xgb_log', 'xgb_auc', 'rf', 'gbf']
         #self.model_list = ['xgb_fix', 'knn', 'rf']
         #self.model_list = ['svr']
-        self.model_list = ['xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_fix', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_linear_fix', 'xgb_fix_log', 'xgb_linear_fix_log']
+        self.model_list = ['gbfC', 'knn', 'xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_fix', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_linear_fix', 'xgb_fix_log', 'xgb_linear_fix_log']
         #self.model_list = ['xgb_fix', 'xgb_linear_fix', 'xgb_fix_log', 'xgb_linear_fix_log']
 
         self.update_model = ['']
@@ -61,7 +61,7 @@ class ParamConfig:
                 'C': hp.loguniform('C', np.log(0.001), np.log(10)),
             },
             'knn': {
-                'n_neighbors': pyll.scope.int(hp.quniform('n_neighbors', 2, 1024, 2)),
+                'n_neighbors': 5, #pyll.scope.int(hp.quniform('n_neighbors', 2, 1024, 2)),
                 #'weights': hp.choice('weights', ['uniform', 'distance']),
                 'weights': 'distance',
             },
@@ -252,7 +252,7 @@ class ParamConfig:
                 'silent': 1,
                 'verbose': 0,
                 'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
-                'num_rounds': 5000,
+                'num_rounds': 3000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
@@ -267,7 +267,7 @@ class ParamConfig:
                 'silent': 1,
                 'verbose': 0,
                 'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
-                'num_rounds': 5000,
+                'num_rounds': 3000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
@@ -282,7 +282,7 @@ class ParamConfig:
                 'silent': 1,
                 'verbose': 0,
                 'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
-                'num_rounds': 5000,
+                'num_rounds': 3000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
@@ -297,7 +297,7 @@ class ParamConfig:
                 'silent': 1,
                 'verbose': 0,
                 'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
-                'num_rounds': 5000,
+                'num_rounds': 3000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },

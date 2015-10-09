@@ -248,7 +248,7 @@ def stacking_nonlinear(blend_train_raw, blend_test_raw, x_label, model_library):
         x_test = x_test.toarray()
 
     # check base
-    model_library = []
+    #model_library = []
 
     meta_feature_dim = x_train.shape[1]
     blend_train = np.zeros((len(x_label), len(model_library) + meta_feature_dim, config.kiter))

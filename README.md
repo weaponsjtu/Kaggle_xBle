@@ -20,3 +20,6 @@ Model Stacking, Raw feature + meta feature, XGBoost + AdaBoost
 All parameters
 
 PS: need to modify gen_featu.py when apply a new task
+
+
+https://github.com/deap/deap
