@@ -13,6 +13,9 @@ model:
 opt:
 	python model_library.py "hyperopt" 2>&1 | tee -a log/hyperopt.log
 
+out:  
+	python model_library.py "outer" | tee -a log/outer.log
+
 stack:
 	python gen_stacking.py | tee -a log/stacking.log
 

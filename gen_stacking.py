@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, Gradien
 from sklearn import cross_validation
 from sklearn import manifold
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.preprocessing import StandardScaler
 
 import xgboost as xgb
 
@@ -57,12 +58,12 @@ def gen_base_model():
         for model in model_list:
             if check_model("%s_%s"%(feat, model)):
                 model_library.append("%s_%s" %(feat, model))
-            #for num in range(config.hyper_max_evals - 10, config.hyper_max_evals+1):
-            for num in range(config.hyper_max_evals):
-                model_name = "%s_%s@%d" %(feat, model, num+1)
+            #for num in range(config.hyper_max_evals):
+            for num in range(6,7):
+                model_name = "%s_%s@%d" %(feat, model, num)
                 if check_model(model_name):
                     model_library.append(model_name)
-                    break
+                    #break
 
     #model_library = add_prior_models(model_library)
     return model_library
@@ -83,7 +84,7 @@ def model_stacking():
                 with open("%s/iter%d/fold%d/valid.true.pkl"%(config.data_folder, iter, fold), 'rb') as f:
                     y_true = pickle.load(f)
                 score_cv.append( ml_score(y_true, y_pred) )
-        if np.mean(score_cv) > 0.786:
+        if np.mean(score_cv) > 0.7:
             print model, np.mean(score_cv)
             best_model.append(model)
     model_library = best_model
@@ -130,33 +131,83 @@ def model_stacking():
 
     return blend_train, blend_test, x_label, model_library
 
+from nolearn.lasagne import NeuralNet
+from lasagne.layers import DenseLayer
+from lasagne.layers import InputLayer
+from lasagne.layers import DropoutLayer
+from lasagne.updates import adagrad, nesterov_momentum
+from lasagne.nonlinearities import softmax, sigmoid
+from lasagne.objectives import categorical_crossentropy, binary_crossentropy
+def lasagne_model(num_features, num_classes):
+    layers = [('input', InputLayer),
+            ('dense0', DenseLayer),
+            ('dropout0', DropoutLayer),
+            ('dense1', DenseLayer),
+            ('dropout1', DropoutLayer),
+            ('dense2', DenseLayer),
+            ('dropout2', DropoutLayer),
+            ('output', DenseLayer)]
+
+    model = NeuralNet(layers=layers,
+            input_shape=(None, num_features),
+            #objective_loss_function=binary_crossentropy,
+            dense0_num_units=1024,
+            dropout0_p=0.4, #0.1,
+            dense1_num_units=512,
+            dropout1_p=0.4, #0.1,
+            dense2_num_units=256,
+            dropout2_p=0.4, #0.1,
+            output_num_units=num_classes,
+            output_nonlinearity=sigmoid,
+            regression=True,
+            update=nesterov_momentum, #adagrad,
+            update_momentum=0.9,
+            update_learning_rate=0.004,
+            eval_size=0.2,
+            verbose=1,
+            max_epochs=30) #15)
+    return model
+
 def xgb_train(x_train, x_label, x_test, y_test):
-    #model = 'xgb'
-    ##model = 'adaboost'
-    ##if model.count('xgb') >0:
-    params = {}
-    params["objective"] = "binary:logistic"
-    params["eta"] = 0.01  # [0,1]
-    params["min_child_weight"] = 6
-    params["subsample"] = 0.7
-    params["colsample_bytree"] = 0.8
-    params["scale_pos_weight"] = 1.0
-    params["eval_metric"] = 'auc'
-    params["silent"] = 1
-    params["max_depth"] = 8
-    params["nthread"] = 16
-    #if config.nthread > 1:
-    #    params["nthread"] = 1
+    #x_train = max_min(x_train)
+    #x_test = max_min(x_test)
+    #x_train = np.log(x_train / (1 - x_train))
+    #x_test = np.log(x_test / (1 - x_test))
+    #x_train = np.log(x_train + 1)
+    #x_test = np.log(x_test + 1)
 
-    num_rounds = 5000
+    # standazition
+    #sc = StandardScaler(copy=True, with_mean=True, with_std=True)
+    #sc.fit(x_train)
+    #x_train = sc.transform(x_train)
+    #x_test = sc.transform(x_test)
 
-    xgtrain = xgb.DMatrix(x_train, label=x_label)
-    xgval = xgb.DMatrix(x_test, label=y_test)
+    print "Feature dimension %d" %x_train.shape[1]
 
-    watchlist = [(xgtrain, "train"), (xgval, "val")]
-    model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
-    pred = model.predict( xgval )
+    #params = {}
+    ##params["objective"] = "binary:logistic"
+    #params["objective"] = "rank:pairwise"
+    #params["eta"] = 0.01  # [0,1]
+    #params["min_child_weight"] = 6#30 #6
+    #params["subsample"] = 0.7
+    #params["colsample_bytree"] = 1
+    #params["scale_pos_weight"] = 1.0
+    #params["eval_metric"] = 'auc'
+    #params["silent"] = 1
+    #params["max_depth"] = 8#4 #8
+    #params["nthread"] = 16
 
+    #num_rounds = 5000
+
+    #xgtrain = xgb.DMatrix(x_train, label=x_label)
+    #xgval = xgb.DMatrix(x_test, label=y_test)
+
+    #watchlist = [(xgtrain, "train"), (xgval, "val")]
+    #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
+    #pred = model.predict( xgval )
+
+
+    clf = lasagne_model(x_train.shape[1], 1)
     #clf = RandomForestRegressor()
     #clf = LogisticRegression()
     #clf = GradientBoostingRegressor()
@@ -164,8 +215,8 @@ def xgb_train(x_train, x_label, x_test, y_test):
 
     #clf = Lasso()
     #clf = AdaBoostRegressor( ExtraTreesRegressor(max_depth=8), n_estimators=20 )
-    #clf.fit(x_train, x_label)
-    #pred = clf.predict(x_test)
+    clf.fit(x_train, x_label)
+    pred = clf.predict(x_test)
     #cal_clf.fit(x_train, x_label)
     #pred = cal_clf.predict_proba(x_test)
     #pred = pred[:, 1]
@@ -243,6 +294,8 @@ def stacking_nonlinear(blend_train_raw, blend_test_raw, x_label, model_library):
     with open("%s/all/test.%s.feat.pkl" %(config.data_folder, feat), 'rb') as f:
         [x_test, y_test] = pickle.load(f)
 
+    print "Raw Feature Dimension is %d" %x_train.shape[1]
+
     if type(x_train) != np.ndarray:
         x_train = x_train.toarray()
         x_test = x_test.toarray()
@@ -289,7 +342,6 @@ def stacking_nonlinear(blend_train_raw, blend_test_raw, x_label, model_library):
 
 
 
-    print "Feature Dimension is %d" %blend_train.shape[1]
     # stacking
     stacking_base(blend_train, blend_test, x_label, model_library)
 
@@ -301,8 +353,8 @@ if __name__ == '__main__':
     #model_stacking()
     blend_train, blend_test, x_label, model_library = model_stacking()
     print "Feature done!!!"
-    #stacking_base(blend_train, blend_test, x_label, model_library)
-    stacking_nonlinear(blend_train, blend_test, x_label, model_library)
+    stacking_base(blend_train, blend_test, x_label, model_library)
+    #stacking_nonlinear(blend_train, blend_test, x_label, model_library)
 
     end_time = time.time()
-    print "cost time %f" %( (end_time - start_time)/1000 )
+    print "cost time %f" %( (end_time - start_time))

@@ -3,12 +3,13 @@ import pandas as pd
 import cPickle as pickle
 import os, sys
 
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, log_loss
 
 from param import config
 
 def ml_score(y_true, y_pred):
     return roc_auc_score(y_true, y_pred)
+    #return log_loss(y_true, y_pred)
 
 
 def Gini(y_true, y_pred):
@@ -48,8 +49,8 @@ def check_model(model_name):
             if os.path.exists('%s/iter%d/fold%d/%s.pred.pkl' %(config.data_folder, iter, fold, model_name)) is False:
                 return False
 
-    if os.path.exists('%s/all/%s.pred.pkl' %(config.data_folder, model_name)) is False:
-        return False
+    #if os.path.exists('%s/all/%s.pred.pkl' %(config.data_folder, model_name)) is False:
+    #    return False
 
     return True
 
@@ -66,6 +67,7 @@ def gen_model_library():
             if check_model("%s_%s"%(feat, model)):
                 model_library.append("%s_%s" %(feat, model))
             for num in range(1, config.hyper_max_evals+1):
+            #for num in range(6, 7):
                 model_name = "%s_%s@%d" %(feat, model, num)
                 if check_model(model_name):
                     model_library.append(model_name)
@@ -112,6 +114,11 @@ def stretch_lr(y_pred):
     #y_pred = (y_pred - y_pred.min()) * 1.0 / (y_pred.max() - y_pred.min())
     y_pred = y_pred * 1.0 / y_pred.max()
     return y_pred
+
+def max_min(pred):
+    y_max = np.max(pred)
+    y_min = np.min(pred)
+    return (pred - y_min + abs(y_min)) / (y_max - y_min + abs(y_min))
 
 def cv_split(train_z, labels_z, kfold, kiter):
     train_subsets_k = []
@@ -289,9 +296,37 @@ def feature_selection():
     with open('remove_keys.pkl', 'wb') as f:
         pickle.dump(remove_keys, f, -1)
 
+#####
+# SMOTE sampling algorithm to construct more minority class sample
+# for each minority class instance C
+#   neighbors = Get KNN(5)
+#   n = random one from neighbors
+#   create new instance r, r.feats = c.feats + (c.feats - n.feats)*rand(0,1)
+#
+from sklearn.neighbors import NearestNeighbors
+def smote_sample(X, y):
+    ratio = float( np.sum(y==0) ) / np.sum(y==1)
+
+    y = np.array(y).tolist()
+    new_feats = []
+
+    nbrs = NearestNeighbors(n_neighbors=5).fit(X)
+    for i in range(len(y)):
+        if y[i] == 1:
+            distances, indices = nbrs.kneighbors(X[i])
+            for r in range(int(ratio)):
+                feat = X[ indices[0][np.random.randint(0,5)] ]
+                new = X[i] + (X[i] - feat) * np.random.random()
+                new_feats.append(new)
+                y.append(1)
+    X_new = np.concatenate((X, new_feats), axis=0)
+    return X_new, y
+
+
 def print_model_score():
     model_library = gen_model_library()
     print model_library
+    print len(model_library)
 
     best_model = []
     best_score = 0
@@ -302,10 +337,11 @@ def print_model_score():
             for fold in range(config.kfold):
                 with open("%s/iter%d/fold%d/%s.pred.pkl"%(config.data_folder, iter, fold, model), 'rb') as f:
                     y_pred = pickle.load(f)
+
                 with open("%s/iter%d/fold%d/valid.true.pkl"%(config.data_folder, iter, fold), 'rb') as f:
                     y_true = pickle.load(f)
                 score_cv.append( ml_score(y_true, y_pred) )
-        if np.mean(score_cv) > 0.7:
+        if np.mean(score_cv) > 0.0:
             print model, np.mean(score_cv)
             best_model.append(model)
 
@@ -315,7 +351,7 @@ def print_model_score():
 
     best_model.append(best_m)
     best_model.reverse()
-    print best_model
+    print len(best_model)
     for iter in range(config.kiter):
         preds = []
         for model in best_model:
@@ -323,7 +359,7 @@ def print_model_score():
                 y_pred = pickle.load(f)
             preds.append(y_pred)
         for i in range(1, len(preds)):
-            print best_model[i], np.corrcoef(preds[0], preds[i], rowvar=0)[0][1]
+            print best_model[i], np.corrcoef(np.array(preds[0]), np.array(preds[i]), rowvar=0)[0][1]
 
 def show_pred():
     model = "label_xgb_linear_fix@1"
@@ -332,6 +368,163 @@ def show_pred():
     for p in pred:
         if p<0:
             print p
+
+def prepare_spark_data():
+    feat = "label"
+    with open('%s/iter0/fold0/train.%s.feat.pkl'%(config.data_folder, feat), 'rb') as f:
+        [x_train, y_train] = pickle.load(f)
+    with open('%s/iter0/fold0/valid.%s.feat.pkl'%(config.data_folder, feat), 'rb') as f:
+        [x_test, y_test] = pickle.load(f)
+
+    from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge, Lasso, ElasticNet
+    from sklearn.svm import SVR, SVC
+    if type(x_train) != np.ndarray:
+        x_train = x_train.toarray()
+        x_train = x_test.toarray()
+    x_train = np.log(x_train.astype(float)+1)
+    x_test = np.log(x_test.astype(float)+1)
+    lr = Ridge()
+    lr.fit(x_train, y_train)
+    y_pred = lr.predict(x_test)
+    print ml_score(y_test, y_pred)
+    return 0
+
+    with open('train_spark.txt', 'wb') as f:
+        for i in range(len(x_train)):
+            feat = ''
+            for j in x_train[i]:
+                feat += str(j) + ' '
+            feat = feat.strip()
+            f.write(str(y_train[i]) + ',' + feat + '\n')
+    f.close()
+
+    with open('test_spark.txt', 'wb') as f:
+        for i in range(len(x_test)):
+            feat = ''
+            for j in x_test[i]:
+                feat += str(j) + ' '
+            feat = feat.strip()
+            f.write(str(i) + ',' + feat + '\n')
+    f.close()
+
+
+# rgf, fm
+def prepare_outer_model_data():
+    feature = 'label'
+    # TODO for all
+    for iter in range(config.kiter):
+        #for fold in range(config.kfold):
+        for fold in range(1):
+            #path = '%s/iter%d/fold%d' %(config.data_folder, iter, fold)
+            path = '%s/all' %(config.data_folder)
+            with open('%s/train.%s.feat.pkl'%(path, feature), 'rb') as f:
+                [x_train, y_train] = pickle.load(f)
+            with open('%s/test.%s.feat.pkl'%(path, feature), 'rb') as f:
+                [x_test, y_test] = pickle.load(f)
+
+            # standazition
+            from sklearn.preprocessing import StandardScaler
+            sc = StandardScaler(copy=True, with_mean=True, with_std=True)
+            sc.fit(x_train)
+            x_train = sc.transform(x_train)
+            x_test = sc.transform(x_test)
+            x_train = np.array(x_train).astype(np.double)
+            x_test = np.array(x_test).astype(np.double)
+
+            # train feature for rgf, fm
+            x_f = open('%s/train.data.x'%path, 'wb')
+            y_f = open('%s/train.data.y'%path, 'wb')
+            fm_f = open('%s/fm.train'%path, 'wb')
+            for i in range(len(y_train)):
+                feat = ''
+                for k in x_train[i]:
+                    feat += str(k) + ' '
+                feat = feat.strip()
+                x_f.write(feat + '\n')
+
+                if y_train[i] == 0:
+                    y_f.write('-1\n')
+                else:
+                    y_f.write('+1\n')
+
+                feat = ''
+                for j in range(len(x_train[i])):
+                    if str(x_train[i][j]) == '0':
+                        continue
+                    feat += ' ' + str(j) + ':' + str(x_train[i][j])
+                fm_f.write(str(y_train[i]) + feat + '\n')
+            x_f.close()
+            y_f.close()
+            fm_f.close()
+
+            # test feature for rgf, fm
+            x_f = open('%s/test.data.x'%path, 'wb')
+            y_f = open('%s/test.data.y'%path, 'wb')
+            fm_f = open('%s/fm.test'%path, 'wb')
+            for i in range(len(y_test)):
+                feat = ''
+                for k in x_test[i]:
+                    feat += str(k) + ' '
+                feat = feat.strip()
+                x_f.write(feat + '\n')
+
+                if y_test[i] == 0:
+                    y_f.write('-1\n')
+                else:
+                    y_f.write('+1\n')
+
+                feat = ''
+                for j in range(len(x_test[i])):
+                    if str(x_test[i][j]) == '0':
+                        continue
+                    feat += ' ' + str(j) + ':' + str(x_test[i][j])
+                fm_f.write(str(y_test[i]) + feat + '\n')
+            x_f.close()
+            y_f.close()
+            fm_f.close()
+
+
+def compute_score():
+
+    # process RGF/FM predictions
+    for iter in range(config.kiter):
+        for fold in range(config.kfold):
+            path = '%s/iter%d/fold%d'%(config.data_folder, iter, fold)
+            with open('%s/valid.true.pkl'%path, 'rb') as f:
+                y_true = pickle.load(f)
+            with open('%s/label_fm.pred'%path, 'rb') as f:
+                y_pred = np.loadtxt(f)
+
+            with open('%s/label_fm@6.pred.pkl'%path, 'wb') as f:
+                pickle.dump(y_pred, f, -1)
+
+    return 0
+
+
+
+            #max_score = 0.0
+            #best_pred = []
+            #for i in range(1,6):
+            #    with open('%s/output/m-0%d.pred'%(path, i), 'rb') as f:
+            #        y_pred = np.loadtxt(f)
+            #    tmp_score = ml_score(y_true, y_pred)
+            #    if tmp_score > max_score:
+            #        max_score = tmp_score
+            #        best_pred = y_pred
+
+            #print "best score"
+            #print max_score
+            #with open('%s/label_rgf@6.pred.pkl'%path, 'wb') as f:
+            #    pickle.dump(best_pred, f, -1)
+    return 0
+
+
+    path = '%s/iter0/fold0'%(config.data_folder)
+    with open('%s/valid.true.pkl'%path, 'rb') as f:
+        y = pickle.load(f)
+
+    y_pred = np.loadtxt('%s/small_fm.pred'%path)
+    print ml_score(y, y_pred)
 
 
 if __name__ == '__main__':
@@ -344,3 +537,6 @@ if __name__ == '__main__':
     #feature_selection()
     print_model_score()
     #show_pred()
+    #prepare_spark_data()
+    #prepare_outer_model_data()
+    #compute_score()

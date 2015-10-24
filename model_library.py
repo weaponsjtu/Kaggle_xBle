@@ -31,7 +31,7 @@ from keras.optimizers import SGD, Adadelta, Adagrad
 
 global trials_counter
 
-def deep_model():
+def keras_model():
     model = Sequential()
     model.add(Dense(33, 20, init='uniform', activation='sigmoid'))
     model.add(Dropout(0.5))
@@ -44,6 +44,43 @@ def deep_model():
 
     #model.fit(X_train, y_train, nb_epoch=20, batch_size=16)
     #score = model.evaluate(X_test, y_test, batch_size=16)
+    return model
+
+from nolearn.lasagne import NeuralNet
+from lasagne.layers import DenseLayer
+from lasagne.layers import InputLayer
+from lasagne.layers import DropoutLayer
+from lasagne.updates import adagrad, nesterov_momentum
+from lasagne.nonlinearities import softmax, sigmoid
+from lasagne.objectives import categorical_crossentropy, binary_crossentropy
+def lasagne_model(num_features, num_classes):
+    layers = [('input', InputLayer),
+            ('dense0', DenseLayer),
+            ('dropout0', DropoutLayer),
+            ('dense1', DenseLayer),
+            ('dropout1', DropoutLayer),
+            ('dense2', DenseLayer),
+            ('dropout2', DropoutLayer),
+            ('output', DenseLayer)]
+
+    model = NeuralNet(layers=layers,
+            input_shape=(None, num_features),
+            #objective_loss_function=binary_crossentropy,
+            dense0_num_units=1024,
+            dropout0_p=0.4, #0.1,
+            dense1_num_units=512,
+            dropout1_p=0.4, #0.1,
+            dense2_num_units=256,
+            dropout2_p=0.4, #0.1,
+            output_num_units=num_classes,
+            output_nonlinearity=sigmoid,
+            regression=True,
+            update=nesterov_momentum, #adagrad,
+            update_momentum=0.9,
+            update_learning_rate=0.004,
+            eval_size=0.2,
+            verbose=0,
+            max_epochs=30) #15)
     return model
 
 
@@ -280,8 +317,8 @@ def train_model(path, x_train, y_train, x_test, y_test, feat, param_best_dic):
 def one_model():
     # load feat names
     #feat_names = config.feat_names
-    feat_names = ['label', 'fs']
-    model_type = "knn"
+    feat_names = ['label']
+    model_type = "extratree"
     model_param = config.param_spaces[model_type]
 
     ## load best params for each model (feat, model)
@@ -355,8 +392,8 @@ def hyperopt_obj(model_param, model_type, feat, trials_counter):
 
                 print "Cross Validation %d_%d, score %f" %(iter, fold, ml_score(y_test, pred_val))
 
-                if model_type == 'logistic':
-                    y_test = y_test / np.linalg.norm(y_test)
+                #if model_type == 'logistic':
+                #    y_test = y_test / np.linalg.norm(y_test)
                 gini_cv[iter, fold] = ml_score(y_test, pred_val)
     else: # multiprocess
         manager = multiprocessing.Manager()
@@ -427,16 +464,28 @@ def preprocess_data(x_train, x_test):
 def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, type="valid"):
     try:
         # preprocess data for xgb model
-        if model_type.count('xgb') > 0:
+        if (model_type.count('xgb') > 0 and model_type != 'xgb_rank' and model_type != 'xgb_count') or model_type == 'lasagne':
             x_train, x_test = preprocess_data(x_train, x_test)
 
         # training
-        if model_type.count('dnn') > 0:
+        if model_type == 'keras':
             print "%s training..." % model_type
-            model = deep_model()
+            model = keras_model()
             model.fit(x_train, y_train, nb_epoch=2, batch_size=16)
             pred_val = model.predict( x_test, batch_size=16 )
             pred_val = pred_val.reshape( pred_val.shape[0] )
+            return pred_val
+
+        if model_type == 'lasagne':
+            print "%s training..." % model_type
+            x_train = np.array(x_train).astype(np.float32)
+            x_test = np.array(x_test).astype(np.float32)
+            num_features = x_train.shape[1]
+            num_classes = 1
+            model = lasagne_model(num_features, num_classes)
+            model.fit(x_train, y_train)
+            pred_val = model.predict(x_test)
+            pred_val = np.array(pred_val).reshape(len(pred_val),)
             return pred_val
 
         # Nearest Neighbors, regression
@@ -471,7 +520,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, 
         if model_type == 'logistic':
             print "%s training..." % model_type
             model = LogisticRegression()
-            y_train = y_train / np.linalg.norm(y_train)
+            #y_train = y_train / np.linalg.norm(y_train)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
             return pred_val
@@ -512,7 +561,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, 
         # random forest regression
         if model_type == 'rf':
             print "%s training..." % model_type
-            model = RandomForestRegressor(n_estimators=model_param['n_estimators'])
+            model = RandomForestRegressor(n_estimators=model_param['n_estimators'], n_jobs=-1)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
             return pred_val
@@ -528,7 +577,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, 
         # extra tree regression
         if model_type == 'extratree':
             print "%s training..." % model_type
-            model = ExtraTreesRegressor(n_estimators=model_param['n_estimators'])
+            model = ExtraTreesRegressor(n_estimators=model_param['n_estimators'], max_features=model_param['max_features'], max_depth=model_param['max_depth'], n_jobs=-1, verbose=1, oob_score=True, bootstrap=True)
             model.fit( x_train, y_train )
             pred_val = model.predict( x_test )
             return pred_val
@@ -573,7 +622,7 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, 
             pred_val = model.predict( xgval )
             return pred_val
 
-        if model_type.count('xgb_rank') > 0:
+        if model_type == 'xgb_rank' or model_type == 'xgb_count':
             print "%s training..." % model_type
             params = model_param
             num_rounds = model_param['num_rounds']
@@ -586,7 +635,6 @@ def hyperopt_library(model_type, model_param, x_train, y_train, x_test, y_test, 
             #model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=100, feval=gini_metric)
             model = xgb.train(params, xgtrain, num_rounds, watchlist, early_stopping_rounds=120)
             pred_val = model.predict( xgval, ntree_limit=model.best_iteration )
-            #pred_val = [0]
             return pred_val
 
         if model_type.count('xgb_linear') > 0:
@@ -696,8 +744,8 @@ class ModelProcess(multiprocessing.Process):
             pickle.dump(pred_val, f, -1)
         f.close()
 
-        if self.model_type == 'logistic':
-            y_test = y_test / np.linalg.norm(y_test)
+        #if self.model_type == 'logistic':
+        #    y_test = y_test / np.linalg.norm(y_test)
 
         self.gini_cv.append( ml_score(y_test, pred_val) )
 
@@ -734,6 +782,56 @@ def hyperopt_main():
             #f.close()
 
 
+##
+# use outer model,
+# such as C++, R, Java
+import subprocess
+import pylibfm
+from scipy import sparse
+def outer_model():
+    rgf_cv = []
+    fm_cv = []
+    feat = 'label'
+    for iter in range(config.kiter):
+        for fold in range(config.kfold):
+            path = '%s/iter%d/fold%d'%(config.data_folder, iter, fold)
+            # rgf model
+            cmd = 'perl outer/call_exe.pl ./outer/rgf train_predict %s/train_predict'%path
+            cmd = './outer/libfm -task r -dim "1,1,8" -iter 100 -method sgd -learn_rate 0.01 -regular "0,0,0.01" -train %s/fm.train -test %s/fm.test -out %s/%s_fm.pred'%(path, path, path, feat)
+            print cmd
+            subprocess.call(cmd, shell=True)
+
+            # fm model
+            cmd = './outer/libfm -task r -dim "1,1,8" -iter 100 -method sgd -learn_rate 0.01 -regular "0,0,0.01" -train %s/fm.train -test %s/fm.test -out %s/%s_fm.pred'%(path, path, path, feat)
+            print cmd
+            #cmd = './outer/libfm -task r -dim "1,1,2" -train %s/fm.train -test %s/fm.test -out %s/%s_fm.pred'%(path, path, path, feat)
+            subprocess.call(cmd, shell=True)
+
+
+            y_pred = np.loadtxt('%s/%s_fm.pred'%(path, feat))
+            with open('%s/valid.true.pkl'%path, 'rb') as f:
+                y_true = pickle.load(f)
+            fm_cv.append(ml_score(y_true, y_pred))
+            print "AUC is ", ml_score(y_true, y_pred)
+            with open('%s/%s.fm.pred.pkl'%(path,feat), 'wb') as f:
+                pickle.dump(y_pred, f, -1)
+
+            ###############################
+            #with open("%s/train.%s.feat.pkl" %(path, feat), 'rb') as f:
+            #    [x_train, y_train] = pickle.load(f)
+            #with open("%s/valid.%s.feat.pkl" %(path, feat), 'rb') as f:
+            #    [x_test, y_test] = pickle.load(f)
+            #x_train = np.array(x_train).astype(np.double)
+            #x_test = np.array(x_test).astype(np.double)
+            #fm = pylibfm.FM()
+            #fm.fit(sparse.csr_matrix(x_train), y_train)
+            #y_pred = fm.predict(sparse.csr_matrix(x_test))
+            #print "AUC is ", ml_score(y_test, y_pred)
+            #break
+    print "libFM AUC is ", np.mean(fm_cv)
+
+
+
 if __name__ == '__main__':
     start_time = time.time()
 
@@ -749,6 +847,9 @@ if __name__ == '__main__':
     if flag == "hyperopt":
         ## hyper parameter search
         hyperopt_main()
+
+    if flag == "outer":
+        outer_model()
 
 
 

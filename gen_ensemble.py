@@ -231,8 +231,8 @@ def ensemble_selection():
             for model in sorted_model:
                 print "ensemble iter %d, model (%d, %s)" %(ensemble_iter, model, model_library[model])
                 # jump for the first max model
-                if ensemble_iter == 1 and model == sorted_model[0]:
-                    continue
+                #if ensemble_iter == 1 and model == sorted_model[0]:
+                #    continue
 
                 obj = lambda param: ensemble_selection_obj(param, model_pred_tmp, model_valid_pred[model], valid_labels, num_valid_matrix)
                 param_space = {
@@ -327,8 +327,8 @@ class EnsembleProcess(multiprocessing.Process):
     def run(self):
         print "ensemble iter %d, model (%d, %s)" %(self.ensemble_iter, self.model, self.model_library[self.model])
         # jump for the first max model
-        if self.ensemble_iter == 1 and self.model == self.sorted_model[0]:
-            return
+        #if self.ensemble_iter == 1 and self.model == self.sorted_model[0]:
+        #    return
 
         obj = lambda param: ensemble_selection_obj(param, self.model_pred_tmp, self.model_valid_pred[self.model], self.valid_labels, self.num_valid_matrix)
         param_space = {
@@ -365,7 +365,23 @@ def ensemble_rank_average():
     model_list = config.model_list
 
     # load model library
-    model_library = gen_model_library()
+    #model_library = gen_model_library()
+    model_library = ['label_xgb_linear_fix@6', 'label_xgb_fix@6', 'label_xgb_count@6', 'label_xgb_rank@6', 'label_lasagne@6', 'label_extratree@6', 'label_ridge@6', 'label_rgf@6', 'label_logistic@6']
+    for model in model_library:
+        with open('%s/all/%s.pred.pkl'%(config.data_folder, model), 'rb') as f:
+            y_pred = pickle.load(f)
+        gen_subm(y_pred, 'sub/final/%s.csv'%model)
+    return 0
+
+    #label_xgb_fix_log@6 0.999108398851
+    #label_xgb_linear_fix@6 0.979159034293
+    #label_xgb_fix@6 1.0
+    #label_xgb_fix@1 0.980509196355
+    #label_xgb_tree_log@2 0.979845717419
+    #label_xgb_tree_log@1 0.978312937118
+    #label_xgb_count@6 0.977797411688
+    #label_xgb_rank@6 0.928070928806
+
     model_num = len(model_library)
     print model_library
     print model_num
@@ -422,10 +438,10 @@ def ensemble_rank_average():
                 for mid in range(model_end_id+1):
                     y_pred = model_valid_pred[sorted_model[mid], iter, fold, :num_valid_matrix[iter, fold]]
                     #pred_tmp += (y_pred.argsort() + 1)*1.0 / len(y_pred)
-                    pred_tmp +=  1.0 / y_pred # log mean, harmonic mean
+                    pred_tmp +=  y_pred # log mean, harmonic mean
                     #pred_tmp *= y_pred
-                pred_tmp = (model_end_id + 1)*1.0 / pred_tmp
-                #pred_tmp /= (model_end_id + 1)
+                #pred_tmp = (model_end_id + 1)*1.0 / pred_tmp
+                pred_tmp /= (model_end_id + 1)
                 #pred_tmp = np.power(pred_tmp, 1.0/(model_end_id + 1))
                 gini_cv_tmp[iter, fold] = ml_score( valid_labels[iter, fold, :num_valid_matrix[iter, fold]], pred_tmp)
         if np.mean(gini_cv_tmp) > best_gini:
@@ -436,20 +452,20 @@ def ensemble_rank_average():
     print best_model_end
     print best_gini
 
-    path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[0] ])
-    with open(path, 'rb') as f:
-        y_pred = pickle.load(f)
-        y_pred = (y_pred.argsort() + 1)*1.0 / len(y_pred)
+    #path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[0] ])
+    #with open(path, 'rb') as f:
+    #    y_pred = pickle.load(f)
+    #    y_pred = (y_pred.argsort() + 1)*1.0 / len(y_pred)
 
-    for mid in range(1, best_model_end + 1):
-        path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[mid] ])
-        with open(path, 'rb') as f:
-            y_pred_tmp = pickle.load(f)
-        y_pred += (y_pred_tmp.argsort() + 1)*1.0 / len(y_pred)
-        #y_pred += y_pred_tmp
+    #for mid in range(1, best_model_end + 1):
+    #    path = "%s/all/%s.pred.pkl" %(config.data_folder, model_library[ sorted_model[mid] ])
+    #    with open(path, 'rb') as f:
+    #        y_pred_tmp = pickle.load(f)
+    #    y_pred += (y_pred_tmp.argsort() + 1)*1.0 / len(y_pred)
+    #    #y_pred += y_pred_tmp
 
-    y_pred = y_pred * 1.0 / (best_model_end + 1)
-    gen_subm(y_pred, 'sub/model_rank_avg.csv')
+    #y_pred = y_pred * 1.0 / (best_model_end + 1)
+    #gen_subm(y_pred, 'sub/model_rank_avg.csv')
 
     #TODO
 

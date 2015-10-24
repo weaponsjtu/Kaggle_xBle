@@ -20,7 +20,7 @@ class ParamConfig:
         self.hyper_max_evals = 100
         self.ensemble_max_evals = 50
 
-        self.nthread = 2
+        self.nthread = 1
         self.max_core = multiprocessing.cpu_count()
 
         if self.DEBUG:
@@ -32,6 +32,7 @@ class ParamConfig:
 
         #self.feat_names = ['stand', 'label', 'dictvec', 'onehot']
         self.feat_names = ['label', 'fs', 'small', 'onehot']
+        #self.feat_names = ['best']
 
         self.data_folder = data_folder
         if not os.path.exists(self.data_folder):
@@ -49,21 +50,25 @@ class ParamConfig:
                     os.makedirs(path)
 
         #self.model_list = ['xgb_fix', 'logistic', 'knn', 'ridge', 'lasso', 'xgb_rank', 'xgb_linear', 'xgb_tree', 'xgb_art', 'xgb_binary', 'xgb_log', 'xgb_auc', 'rf', 'gbf']
-        #self.model_list = ['xgb_fix', 'knn', 'rf']
-        #self.model_list = ['svr']
-        self.model_list = ['gbfC', 'knn', 'xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_fix', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_linear_fix', 'xgb_fix_log', 'xgb_linear_fix_log']
+        #self.model_list = ['logistic']
+        #self.model_list = ['extratree', 'knn', 'rf']
+        self.model_list = ['fm', 'logistic', 'rgf', 'lasagne', 'ridge', 'extratree', 'rf', 'lasso', 'gbfC', 'knn', 'xgb_binary', 'xgb_auc', 'xgb_log', 'xgb_rank', 'xgb_count', 'xgb_tree_auc', 'xgb_tree_log', 'xgb_fix', 'xgb_linear_fix', 'xgb_fix_log', 'xgb_linear_fix_log']
         #self.model_list = ['xgb_fix', 'xgb_linear_fix', 'xgb_fix_log', 'xgb_linear_fix_log']
 
         self.update_model = ['']
         self.model_type = ''
         self.param_spaces = {
             'logistic': {
-                'C': hp.loguniform('C', np.log(0.001), np.log(10)),
+                'C': 1.0, #hp.loguniform('C', np.log(0.001), np.log(10)),
             },
             'knn': {
-                'n_neighbors': 5, #pyll.scope.int(hp.quniform('n_neighbors', 2, 1024, 2)),
+                'n_neighbors': 50, #pyll.scope.int(hp.quniform('n_neighbors', 2, 1024, 2)),
                 #'weights': hp.choice('weights', ['uniform', 'distance']),
                 'weights': 'distance',
+            },
+            'lasagne': {
+                #TODO
+                'loss': 'lr',
             },
             'knnC': {
                 'n_neighbors': pyll.scope.int(hp.quniform('n_neighbors', 2, 1024, 2)),
@@ -71,22 +76,23 @@ class ParamConfig:
                 'weights': 'distance',
             },
             'ridge': {
-                'alpha': hp.loguniform('alpha', np.log(0.01), np.log(20)),
+                'alpha': 1.0, #hp.loguniform('alpha', np.log(0.01), np.log(20)),
             },
             'lasso': {
                 'alpha': hp.loguniform('alpha', np.log(0.00001), np.log(0.1)),
             },
             'rf': {
-                'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
-                'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
+                'n_estimators': 300, #pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
+                'max_features': 0.7, #hp.quniform('max_features', 0.05, 1.0, 0.05),
             },
             'rfC': {
                 'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 100)),
                 'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
             },
             'extratree': {
-                'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
-                'max_features': hp.quniform('max_features', 0.05, 1.0, 0.05),
+                'n_estimators': 300, #pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
+                'max_features': 0.7, #hp.quniform('max_features', 0.05, 1.0, 0.05),
+                'max_depth': 20,
             },
             'extratreeC': {
                 'n_estimators': pyll.scope.int(hp.quniform('n_estimators', 100, 500, 10)),
@@ -172,13 +178,31 @@ class ParamConfig:
             },
             'xgb_rank': {
                 'objective': 'rank:pairwise',
-                'eta' : hp.quniform('eta', 0.01, 1, 0.01),
-                'lambda' : hp.quniform('lambda', 0, 5, 0.05),
-                'alpha' : hp.quniform('alpha', 0, 0.5, 0.005),
-                'lambda_bias' : hp.quniform('lambda_bias', 0, 3, 0.1),
-                'num_rounds' : 10000,
-                'silent' : 1,
+                'eta': 0.01,
+                'min_child_weight': 6,
+                'subsample':0.7, #hp.quniform('subsample', 0.5, 1.0, 0.01),
+                'eval_metric': 'auc',
+                'colsample_bytree': 0.8,
+                'scale_pos_weight': 1,
+                'silent': 1,
                 'verbose': 0,
+                'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
+                'num_rounds': 3000,
+                'early_stopping_rounds': 120,
+                'nthread': 1,
+            },
+            'xgb_count': {
+                'objective': 'count:poisson',
+                'eta': 0.01,
+                'min_child_weight': 6,
+                'subsample':0.7, #hp.quniform('subsample', 0.5, 1.0, 0.01),
+                'eval_metric': 'auc',
+                'colsample_bytree': 0.8,
+                'scale_pos_weight': 1,
+                'silent': 1,
+                'verbose': 0,
+                'max_depth': 8, #pyll.scope.int(hp.quniform('max_depth', 1, 10, 1)),
+                'num_rounds': 3000,
                 'early_stopping_rounds': 120,
                 'nthread': 1,
             },
