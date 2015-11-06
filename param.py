@@ -9,8 +9,9 @@ import multiprocessing
 class ParamConfig:
     def __init__(self, data_folder):
         # target variable to predict
-        self.target = 'target'
-        self.tid = 'ID'
+        self.target = 'Sales'
+        self.tid = 'Id'
+        self.type = 'regression' # regression, classification
 
         # (3,3), (2, 5), (5, 2)
         self.kfold = 3  # cross validation, k-fold
@@ -24,14 +25,14 @@ class ParamConfig:
         self.max_core = multiprocessing.cpu_count()
 
         if self.DEBUG:
-            self.hyper_max_evals = 6
+            self.hyper_max_evals = 1
             #self.ensemble_max_evals = 5
 
-        self.origin_train_path = "../data/train.csv"
-        self.origin_test_path = "../data/test.csv"
+        self.origin_train_path = "../data/tr.csv"
+        self.origin_test_path = "../data/te.csv"
 
         #self.feat_names = ['stand', 'label', 'dictvec', 'onehot']
-        self.feat_names = ['label', 'fs', 'small', 'onehot']
+        #self.feat_names = ['label', 'fs', 'small', 'onehot']
         #self.feat_names = ['best']
 
         self.data_folder = data_folder

@@ -8,9 +8,21 @@ from sklearn.metrics import roc_auc_score, log_loss
 from param import config
 
 def ml_score(y_true, y_pred):
-    return roc_auc_score(y_true, y_pred)
+    #return roc_auc_score(y_true, y_pred)
     #return log_loss(y_true, y_pred)
+    return rmspe(y_true, y_pred)
 
+def ToWeight(y):
+    w = np.zeros(y.shape, dtype=float)
+    ind = y != 0
+    w[ind] = 1./(y[ind]**2)
+    return w
+
+
+def rmspe(yhat, y):
+    w = ToWeight(y)
+    rmspe = np.sqrt(np.mean( w * (y - yhat)**2 ))
+    return rmspe
 
 def Gini(y_true, y_pred):
     # check and get number of samples
@@ -526,6 +538,15 @@ def compute_score():
     y_pred = np.loadtxt('%s/small_fm.pred'%path)
     print ml_score(y, y_pred)
 
+def merge_data():
+    train = pd.read_csv('../data/train.csv')
+    test = pd.read_csv('../data/test.csv')
+    store = pd.read_csv('../data/store.csv')
+    tr = pd.merge(train, store, on='Store')
+    te = pd.merge(test, store, on='Store')
+    tr.to_csv('../data/tr.csv')
+    te.to_csv('../data/te.csv')
+
 
 if __name__ == '__main__':
     #show_best_params()
@@ -535,8 +556,9 @@ if __name__ == '__main__':
     #test()
     #print check_better(sys.argv[1])
     #feature_selection()
-    print_model_score()
+    #print_model_score()
     #show_pred()
     #prepare_spark_data()
     #prepare_outer_model_data()
     #compute_score()
+    merge_data()
