@@ -33,7 +33,7 @@ class ParamConfig:
 
         #self.feat_names = ['stand', 'label', 'dictvec', 'onehot']
         #self.feat_names = ['label', 'fs', 'small', 'onehot']
-        #self.feat_names = ['best']
+        self.feat_names = ['stand']
 
         self.data_folder = data_folder
         if not os.path.exists(self.data_folder):
