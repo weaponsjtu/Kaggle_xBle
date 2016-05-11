@@ -1,5 +1,5 @@
 # Kaggle_xBle
-A Swiss Army Knife for Machine Learning Practice, cross validation, model selection, ensemble selection, stacking
+A Swiss Army Knife for Machine Learning Practice, cross validation, model selection, ensemble selection, stacking. It is built based on scikit-learn package.
 
 ### gen_fold.py
 Cross validation
